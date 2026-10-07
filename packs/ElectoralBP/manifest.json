@@ -2,28 +2,57 @@
   "format_version": 2,
   "header": {
     "name": "Electoral Board Table (BP)",
-    "description": "Board Table block: configure nations, governments, diplomacy and run AI-simulated elections and successions.",
+    "description": "Board Table block: run AI-simulated elections for your roleplay nations, counted live county by county.",
     "uuid": "ac836087-aa93-4e7a-a298-6b8708d6b1e1",
-    "version": [1, 0, 0],
-    "min_engine_version": [1, 21, 90]
+    "version": [
+      1,
+      1,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      21,
+      90
+    ]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "9df9e27f-b2ca-43de-87da-5ae8e6fa7a6f",
-      "version": [1, 0, 0]
+      "version": [
+        1,
+        1,
+        0
+      ]
     },
     {
       "type": "script",
       "language": "javascript",
       "uuid": "df68dbcb-5933-475b-8952-31e8c44dfe15",
       "entry": "scripts/main.js",
-      "version": [1, 0, 0]
+      "version": [
+        1,
+        1,
+        0
+      ]
     }
   ],
   "dependencies": [
-    { "uuid": "617ac48b-39cc-4d80-9191-993aefef58b5", "version": [1, 0, 0] },
-    { "module_name": "@minecraft/server", "version": "2.0.0" },
-    { "module_name": "@minecraft/server-ui", "version": "2.0.0" }
+    {
+      "uuid": "617ac48b-39cc-4d80-9191-993aefef58b5",
+      "version": [
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.0.0"
+    },
+    {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.0.0"
+    }
   ]
 }

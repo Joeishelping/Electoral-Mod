@@ -3,7 +3,6 @@
 import { world } from "@minecraft/server";
 import { choose } from "./forms.js";
 import { getState, saveState } from "../core/storage.js";
-import { getPerson } from "../core/state.js";
 
 export const CLOSE = "__close__";
 
@@ -26,6 +25,11 @@ export async function loop(player, build, backLabel = "§8« Back") {
   }
 }
 
+/** A read-only text page. */
+export function page(player, title, body) {
+  return loop(player, () => ({ title, body, options: [] }));
+}
+
 export function isAdmin(player) {
   if (player.hasTag("electoral_admin")) return true;
   try {
@@ -35,18 +39,9 @@ export function isAdmin(player) {
   }
 }
 
-export function isLeaderOf(player, nation) {
-  const leader = getPerson(getState(), nation.leaderId);
-  return !!leader && !!leader.player && leader.player.toLowerCase() === player.name.toLowerCase();
-}
-
-export function canManage(player, nation) {
-  return isAdmin(player) || isLeaderOf(player, nation);
-}
-
 export function announce(text) {
   try {
-    world.sendMessage(`§6[Board]§r ${text}`);
+    world.sendMessage(text);
   } catch {
     // ignore
   }

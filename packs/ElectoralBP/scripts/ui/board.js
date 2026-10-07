@@ -1,66 +1,35 @@
-// The Board Table: public entry point for every player.
+// The Board Table: list of nations and each nation's page.
 
 import { GOVERNMENTS, GOV_BY_ID, effectiveGov } from "../data/governments.js";
-import { COLORS, COLOR_NAMES } from "../data/names.js";
-import { getPerson, getRegion, nationPersons, personLabel } from "../core/state.js";
+import { COLORS } from "../data/names.js";
+import { createNation, displayName, getPerson } from "../core/state.js";
 import { resetState, stateSize } from "../core/storage.js";
-import { generateNation } from "../engine/generate.js";
 import { STANCES, STANCE_BY_ID, getStance, setStance } from "../engine/diplomacy.js";
 import { confirm, modal, notice } from "./forms.js";
-import { announce, canManage, commit, isAdmin, isLeaderOf, loop, S } from "./nav.js";
-import { governmentPage, metricsPage, personCard } from "./render.js";
-import { castBallot, electionsMenu, forecastMenu, historyMenu, moodMenu, viewResult } from "./elections.js";
-import { manageNation, officesMenu, regionProfile } from "./admin.js";
+import { announce, commit, isAdmin, loop, page, S } from "./nav.js";
+import { nationSummary, regionProfile, statusLine } from "./render.js";
+import { castBallot, electionControl, historyMenu, moodMenu, pollMenu, viewResult } from "./elections.js";
+import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, settingsMenu } from "./setup.js";
 
 const HELP = [
-  "§lThe Board Table§r",
+  "§lHow the Board Table works§r",
   "",
-  "§6Nations§r each pick a government type. The type decides who votes, how votes are counted, how honest the count is, who sits in the cabinet and how power passes on.",
+  "§61. Set up a nation§r - name it and pick a voting style (Democracy, Parliament, Single-Party State, councils...). The style only decides how the vote works. You run the country.",
   "",
-  "§6Regions§r (counties/provinces) have a population, voting power and a mix of voter groups - farmers, miners, merchants, clergy, youth and more. Each group has its own stances, priorities, turnout habits and taste in leaders.",
+  "§62. Add counties§r - pick what kind of place each is (farmland, mining hills, port town...). That decides who lives there - farmers, miners, merchants, clergy, youth - and what they care about.",
   "",
-  "§6Candidates§r have stances on 12 issues, focus issues they campaign on, groups they court, campaign stops, a home region, and personal attributes (popularity, charisma, competence, integrity, funds).",
+  "§63. Add candidates§r - name them, give them up to 3 main issues, ratings, groups they court and counties they campaign in.",
   "",
-  "§6Performance sliders§r rate the government. Groups judge the incumbent (and their party) on the metrics tied to issues they care about.",
+  "§64. Rate the leader§r - performance sliders. Voters punish or reward whoever is in office (and their party).",
   "",
-  "§6The count§r: every group in every region scores every candidate (policy distance, issue emphasis, personal appeal, local ties, courting, record, party loyalty, kinship) and votes probabilistically with realistic regional and national swings. Then the nation's method counts it: regional electors, popular vote, runoff, ranked choice, proportional seats with coalition bargaining, or council consensus.",
+  "§65. Start an election§r - players vote at any Board Table. Run polls during the campaign.",
   "",
-  "§6After each election§r voters remember who they backed, failing areas become more important, and reputations shift.",
+  "§66. Close the polls§r - results come in county by county in chat, with a running total and a projection, then the winner is announced.",
   "",
-  "§6Admins§r: operators, or players with the tag §eelectoral_admin§r (/tag @s add electoral_admin).",
-  "§6Leaders§r: link a notable to your gamertag to use the Leader's Desk while in office.",
+  "Every group in every county weighs each candidate's stances, main issues, personality, home county, who they court, party loyalty and the leader's record - then the count includes realistic swings, so upsets can happen.",
+  "",
+  "§7Admins: operators, or /tag <player> add electoral_admin",
 ].join("\n");
-
-function notablesView(player, nation) {
-  return loop(player, () => {
-    const state = S();
-    const people = nationPersons(state, nation).sort((a, b) => b.popularity - a.popularity);
-    return {
-      title: "Notables",
-      body: "§7Public figures of the nation.",
-      options: people.map((p) => ({ text: `${personLabel(state, nation, p)}\n§7popularity ${p.popularity}`, run: () => loop(player, () => ({ title: p.name, body: personCard(S(), nation, p), options: [] })) })),
-    };
-  });
-}
-
-function votersView(player, nation) {
-  return loop(player, () => ({
-    title: "Voter Profiles",
-    body: "§7Who lives where, what they care about, and which way they lean.",
-    options: nation.regions.map((r) => ({ text: `${r.name}\n§7pop ${r.population} · power ${r.power}`, run: () => loop(player, () => ({ title: r.name, body: regionProfile(nation, r), options: [] })) })),
-  }));
-}
-
-function leaderDesk(player, nation) {
-  return loop(player, () => ({
-    title: "Leader's Desk",
-    body: `§7Welcome, ${effectiveGov(nation).leaderTitle}. Shape your government and foreign policy.`,
-    options: [
-      { text: "Appointments & Heir", run: () => officesMenu(player, nation, true) },
-      { text: "Foreign Policy", run: () => setRelationFlow(player, nation) },
-    ],
-  }));
-}
 
 export function nationView(player, nation) {
   return loop(player, () => {
@@ -68,127 +37,82 @@ export function nationView(player, nation) {
     if (!state.nations[nation.id]) return null;
     const e = nation.election;
     const admin = isAdmin(player);
-    const residence = state.residents[player.name];
+    const gov = effectiveGov(nation);
     return {
       title: nation.name,
-      body: governmentPage(state, nation),
+      body: nationSummary(state, nation),
       options: [
-        e && e.kind === "popular" && { text: "§2Cast Your Ballot", icon: "textures/items/paper", run: () => castBallot(player, nation) },
-        e && { text: "Polls & Forecast", icon: "textures/items/compass_item", run: () => forecastMenu(player, nation) },
-        nation.history[0] && { text: "Latest Results", icon: "textures/items/book_written", run: () => viewResult(player, nation, nation.history[0]) },
-        nation.history.length > 0 && { text: "Election History", run: () => historyMenu(player, nation) },
-        { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },
-        { text: "Government Performance", icon: "textures/items/clock_item", run: () => loop(player, () => ({ title: "Performance", body: metricsPage(nation), options: [] })) },
-        nation.regions.length > 0 && { text: "Voter Profiles", icon: "textures/items/map_filled", run: () => votersView(player, nation) },
-        { text: "Notables", icon: "textures/items/name_tag", run: () => notablesView(player, nation) },
-        residence?.nationId !== nation.id && nation.regions.length > 0 && { text: "Become a Resident", run: () => residenceFlow(player, nation) },
-        isLeaderOf(player, nation) && { text: "§6Leader's Desk", icon: "textures/items/gold_ingot", run: () => leaderDesk(player, nation) },
-        admin && e && { text: "§eElections (admin)", run: () => electionsMenu(player, nation) },
-        admin && { text: "§eManage Nation", icon: "textures/items/iron_sword", run: () => manageNation(player, nation) },
+        e && !nation.count && e.kind === "popular" && { text: "§2Vote", icon: "textures/items/paper", run: () => castBallot(player, nation) },
+        e && !nation.count && { text: "Latest Poll", icon: "textures/items/compass_item", run: () => pollMenu(player, nation) },
+        nation.history[0] && { text: "Last Results", icon: "textures/items/book_written", run: () => viewResult(player, nation, nation.history[0]) },
+        nation.history.length > 1 && { text: "Past Elections", run: () => historyMenu(player, nation) },
+        nation.leaderId && { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },
+        nation.regions.length > 0 && {
+          text: "Counties & Voters",
+          icon: "textures/items/map_filled",
+          run: () => loop(player, () => ({ title: "Counties", body: "§7Who lives where and what they want.", options: nation.regions.map((r) => ({ text: r.name, run: () => page(player, r.name, regionProfile(S(), nation, r)) })) })),
+        },
+        admin && { text: "§eRun an Election", icon: "textures/items/book_writable", run: () => electionControl(player, nation) },
+        admin && { text: "§eCandidates", icon: "textures/items/name_tag", run: () => candidatesMenu(player, nation) },
+        admin && { text: "§eCounties", run: () => countiesMenu(player, nation) },
+        admin && gov.multiParty && { text: "§eParties", icon: "textures/items/banner_pattern", run: () => partiesMenu(player, nation) },
+        admin && { text: "§eLeader Performance", icon: "textures/items/clock_item", run: () => performanceMenu(player, nation) },
+        admin && { text: "§eNation Settings", run: () => settingsMenu(player, nation) },
       ],
     };
   });
 }
 
-async function residenceFlow(player, nation) {
-  const r = await modal(player, `Residency: ${nation.name}`, [
-    { key: "region", type: "dropdown", label: "Your home region (where your ballot is counted):", options: nation.regions.map((x) => x.name) },
-  ], "Register");
+async function addNation(player) {
+  const state = S();
+  const used = new Set(Object.values(state.nations).map((n) => n.color));
+  const r = await modal(player, "Add a Nation", [
+    { key: "name", type: "text", label: "Nation name §c(required)", placeholder: "Type the nation's name", value: "" },
+    { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.description}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name) },
+    { key: "color", type: "dropdown", label: "Color", options: colorOptions(), value: Math.max(0, COLORS.findIndex((c) => !used.has(c))) },
+  ], "Create");
   if (!r) return;
-  S().residents[player.name] = { nationId: nation.id, regionId: nation.regions[r.region].id };
+  if (!r.name.trim()) return notice(player, "Name needed", "Give the nation a name.");
+  const nation = createNation(state, { name: r.name.trim(), gov: GOVERNMENTS[r.gov].id, color: COLORS[r.color] });
   commit();
-  player.sendMessage(`§aYou are now a resident of ${nation.regions[r.region].name}, ${nation.name}.`);
+  player.sendMessage(`§aCreated ${nation.name}. Next: add counties and candidates.`);
+  return nationView(player, nation);
 }
 
 // ---------- diplomacy ----------
 
-async function setRelationFlow(player, fixedNation = null) {
-  const state = S();
-  const nations = Object.values(state.nations);
-  if (nations.length < 2) return notice(player, "Diplomacy", "At least two nations are needed.");
-  const fields = [];
-  if (!fixedNation) fields.push({ key: "a", type: "dropdown", label: "Nation", options: nations.map((n) => n.name) });
-  const others = fixedNation ? nations.filter((n) => n.id !== fixedNation.id) : nations;
-  fields.push({ key: "b", type: "dropdown", label: fixedNation ? `${fixedNation.name}'s relation toward` : "Toward", options: others.map((n) => n.name) });
-  fields.push({ key: "stance", type: "dropdown", label: "Stance", options: STANCES.map((s) => `${s.color}${s.name}`), value: 3 });
-  const r = await modal(player, "Set Relation", fields, "Declare");
+async function setRelation(player) {
+  const nations = Object.values(S().nations);
+  const r = await modal(player, "Set Relation", [
+    { key: "a", type: "dropdown", label: "Nation", options: nations.map((n) => n.name) },
+    { key: "b", type: "dropdown", label: "and", options: nations.map((n) => n.name), value: 1 },
+    { key: "stance", type: "dropdown", label: "Relation", options: STANCES.map((s) => `${s.color}${s.name}`), value: 3 },
+  ], "Set");
   if (!r) return;
-  const a = fixedNation || nations[r.a];
-  const b = others[r.b];
-  if (!a || !b || a.id === b.id) return notice(player, "Diplomacy", "Pick two different nations.");
+  const a = nations[r.a];
+  const b = nations[r.b];
+  if (a.id === b.id) return notice(player, "Diplomacy", "Pick two different nations.");
   const stance = STANCES[r.stance];
-  setStance(state, a.id, b.id, stance.id);
+  setStance(S(), a.id, b.id, stance.id);
   commit();
-  announce(`${a.color}${a.name}§r and ${b.color}${b.name}§r: ${stance.color}${stance.name}§r.`);
+  announce(`§6[Diplomacy]§r ${a.color}${a.name}§r and ${b.color}${b.name}§r: ${stance.color}${stance.name}`);
 }
 
 function diplomacyMenu(player) {
   return loop(player, () => {
     const state = S();
-    const nations = Object.values(state.nations);
-    const lines = ["§7Wars make security dominate elections and rally voters to incumbents; trade pacts raise the stakes of trade policy.", ""];
+    const lines = ["§7Wars make voters care about defense and rally them behind whoever is in office. Trade pacts make trade policy matter more.", ""];
     for (const [key, stance] of Object.entries(state.relations)) {
       const [a, b] = key.split("|").map((id) => state.nations[id]);
-      if (!a || !b) continue;
-      const s = STANCE_BY_ID[stance];
-      lines.push(`${a.color}${a.name}§r §7<->§r ${b.color}${b.name}§r: ${s.color}${s.name}`);
+      if (a && b) lines.push(`${a.color}${a.name}§r §7<->§r ${b.color}${b.name}§r: ${STANCE_BY_ID[stance].color}${STANCE_BY_ID[stance].name}`);
     }
-    if (lines.length === 2) lines.push("§7All nations are neutral toward each other.");
-    const admin = isAdmin(player);
+    if (lines.length === 2) lines.push("§7Everyone is neutral.");
     return {
-      title: "Diplomacy Board",
+      title: "Diplomacy",
       body: lines.join("\n"),
-      options: [
-        admin && { text: "§eSet a Relation", run: () => setRelationFlow(player) },
-        ...nations.map((n) => ({
-          text: `${n.color}${n.name}`,
-          run: () => loop(player, () => ({
-            title: n.name,
-            body: nations.filter((o) => o.id !== n.id).map((o) => {
-              const s = STANCE_BY_ID[getStance(state, n.id, o.id)];
-              return `${o.color}${o.name}§r: ${s.color}${s.name}`;
-            }).join("\n") || "§7No other nations.",
-            options: [canManage(player, n) && { text: "Change a Relation", run: () => setRelationFlow(player, n) }],
-          })),
-        })),
-      ],
+      options: [isAdmin(player) && { text: "§eSet a Relation", run: () => setRelation(player) }],
     };
   });
-}
-
-// ---------- founding ----------
-
-async function foundNation(player) {
-  const r = await modal(player, "Found a Nation", [
-    { key: "name", type: "text", label: "Name (blank = generate)", value: "" },
-    { key: "gov", type: "dropdown", label: "Government type", options: GOVERNMENTS.map((g) => `${g.name} - ${g.description}`) },
-    { key: "regions", type: "slider", label: "Regions to generate", min: 1, max: 16, value: 6 },
-    { key: "color", type: "dropdown", label: "Color", options: ["Automatic", ...COLORS.map((c) => `${c}${COLOR_NAMES[c]}`)] },
-  ], "Found");
-  if (!r) return;
-  const state = S();
-  const nation = generateNation(state, { name: r.name.trim() || undefined, gov: GOVERNMENTS[r.gov].id, regions: r.regions });
-  if (r.color > 0) nation.color = COLORS[r.color - 1];
-  commit();
-  announce(`A new nation is founded: ${nation.color}${nation.name}§r (${GOV_BY_ID[nation.gov].name}), led by ${getPerson(state, nation.leaderId)?.name}.`);
-  return nationView(player, nation);
-}
-
-function boardSettings(player) {
-  return loop(player, () => ({
-    title: "Board Settings",
-    body: `§7Saved data: §f${(stateSize() / 1024).toFixed(1)} KB§7 across ${Object.keys(S().nations).length} nation(s).`,
-    options: [
-      {
-        text: "§cErase ALL Board Data",
-        run: async () => {
-          if (!(await confirm(player, "Erase Everything", "Delete every nation, person, election and relation? This cannot be undone.", "§cErase"))) return;
-          resetState();
-          announce("All Board Table data was erased.");
-        },
-      },
-    ],
-  }));
 }
 
 export function openBoard(player) {
@@ -196,30 +120,39 @@ export function openBoard(player) {
     const state = S();
     const nations = Object.values(state.nations);
     const admin = isAdmin(player);
-    const res = state.residents[player.name];
-    const home = res ? state.nations[res.nationId] : null;
-    const open = nations.filter((n) => n.election);
-    const lines = ["§7Nations, governments and elections of the realm."];
-    if (home) lines.push(`§7Your residence: §f${getRegion(home, res.regionId)?.name || "?"}, ${home.name}`);
-    if (open.length) lines.push("", "§a§lOpen elections:§r " + open.map((n) => `${n.color}${n.name}§r (${n.election.title})`).join(", "));
-    if (!nations.length) lines.push("", admin ? "§eNo nations yet. Found one to get started." : "§7No nations have been founded yet. Ask an admin.");
+    const lines = ["§7Pick a nation to vote, see polls and results."];
+    if (!nations.length) lines.push("", admin ? "§eNo nations yet - add one to start." : "§7No nations yet. Ask an admin to set one up.");
+    const live = nations.filter((n) => n.election || n.count);
+    if (live.length) lines.push("", ...live.map((n) => `${n.color}${n.name}§r: ${statusLine(state, n)}`));
     return {
       title: "§lBoard Table",
       body: lines.join("\n"),
       options: [
         ...nations.map((n) => {
           const leader = getPerson(state, n.leaderId);
-          return {
-            text: `${n.color}${n.name}${n.election ? " §a[VOTE]" : ""}\n§7${GOV_BY_ID[n.gov]?.name} · ${leader ? leader.name : "vacant"}`,
-            run: () => nationView(player, n),
-          };
+          const tag = n.count ? " §6[COUNTING]" : n.election ? " §a[VOTING]" : "";
+          return { text: `${n.color}${n.name}${tag}\n§7${GOV_BY_ID[n.gov]?.name}${leader ? ` · ${displayName(leader)}` : ""}`, run: () => nationView(player, n) };
         }),
-        nations.length > 1 && { text: "Diplomacy Board", icon: "textures/items/compass_item", run: () => diplomacyMenu(player) },
-        admin && { text: "§2Found a Nation", icon: "textures/items/banner_pattern", run: () => foundNation(player) },
-        { text: "How It Works", icon: "textures/items/book_normal", run: () => loop(player, () => ({ title: "How It Works", body: HELP, options: [] })) },
-        admin && { text: "§7Board Settings", run: () => boardSettings(player) },
+        admin && { text: "§2+ Add a Nation", icon: "textures/items/banner_pattern", run: () => addNation(player) },
+        nations.length > 1 && { text: "Diplomacy", icon: "textures/items/compass_item", run: () => diplomacyMenu(player) },
+        { text: "How It Works", icon: "textures/items/book_normal", run: () => page(player, "How It Works", HELP) },
+        admin && {
+          text: "§7Board Data",
+          run: () => loop(player, () => ({
+            title: "Board Data",
+            body: `§7Saved data: ${(stateSize() / 1024).toFixed(1)} KB, ${nations.length} nation(s).`,
+            options: [{
+              text: "§cErase Everything",
+              run: async () => {
+                if (!(await confirm(player, "Erase Everything", "Delete every nation, candidate and election? This cannot be undone.", "§cErase"))) return;
+                resetState();
+                announce("§6[Board]§r All Board Table data was erased.");
+                return "back";
+              },
+            }],
+          })),
+        },
       ],
     };
   }, "Close");
 }
-

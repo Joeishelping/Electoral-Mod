@@ -1,53 +1,13 @@
-// Committing outcomes: installing leaders, forming governments, recording history
-// and "learning" - voter habits, issue priorities and reputations shift after
-// every contest so the next election remembers this one.
+// Recording results and "learning": voter habits, issue priorities and
+// reputations shift after every election so the next one remembers this one.
+// Nothing here runs the country - that's up to the roleplayers.
 
 import { ISSUE_IDS } from "../data/issues.js";
 import { METRICS } from "../data/metrics.js";
 import { effectiveGov } from "../data/governments.js";
-import { addLog, getPerson, HISTORY_LIMIT } from "../core/state.js";
+import { getPerson, HISTORY_LIMIT } from "../core/state.js";
 import { clamp, createRng, sigmoid } from "../core/random.js";
-import { formGovernment } from "./cabinet.js";
 import { buildContext, buildGroups, utility } from "./model.js";
-
-export function installLeader(state, nation, leaderId, seed, opts = {}) {
-  const gov = effectiveGov(nation);
-  const rng = createRng(seed ^ 0x9e3779b9);
-  const leader = getPerson(state, leaderId);
-  const sameLeader = nation.leaderId === leaderId;
-  if (!opts.reshuffle) {
-    if (sameLeader) nation.leaderTerms = (nation.leaderTerms || 0) + 1;
-    else nation.leaderTerms = 1;
-    if (leader) leader.terms = (leader.terms || 0) + 1;
-  }
-
-  // Continuity: a re-elected leader or an orderly succession keeps sitting officials
-  // unless someone better fits, so treat the current cabinet as soft pins.
-  const savedPins = nation.cabinetPins;
-  if (opts.continuity) {
-    const keep = {};
-    const allowed = opts.coalition ? new Set(opts.coalition.map((c) => c.key)) : null;
-    for (const [office, id] of Object.entries(nation.cabinet)) {
-      const p = getPerson(state, id);
-      if (id === leaderId || !p?.alive) continue;
-      if (allowed && !allowed.has(p.partyId || `ind:${p.id}`)) continue; // ministers outside the new coalition go
-      keep[office] = id;
-    }
-    nation.cabinetPins = { ...keep, ...savedPins };
-  }
-  nation.leaderId = leaderId;
-  if (nation.heirId === leaderId) nation.heirId = null;
-  if (leader && gov.selection === "hereditary" && leader.dynasty) nation.dynasty = leader.dynasty;
-  const formed = formGovernment(state, nation, gov, leaderId, rng, {
-    runningMateId: opts.runningMateId,
-    coalition: opts.coalition,
-    keepDeputy: opts.keepDeputy,
-  });
-  nation.cabinetPins = savedPins;
-  nation.deputyId = formed.deputyId;
-  nation.cabinet = formed.cabinet;
-  return { leaderId, deputyId: formed.deputyId, cabinet: { ...formed.cabinet }, notes: formed.notes };
-}
 
 function learnFromElection(state, nation, result, gov) {
   // 1. Voting habits: groups drift toward the parties they just backed.
@@ -83,8 +43,8 @@ function learnFromElection(state, nation, result, gov) {
   result.candidates.forEach((c, i) => {
     const p = getPerson(state, c.id);
     if (!p) return;
-    if (i === result.winnerIdx) p.popularity = clamp(p.popularity + 6, 0, 100);
-    else p.popularity = clamp(p.popularity - (c.id === nation.leaderId ? 8 : 3), 0, 100);
+    if (i === result.winnerIdx) p.popularity = clamp(p.popularity + 5, 0, 100);
+    else p.popularity = clamp(p.popularity - (c.id === nation.leaderId ? 6 : 2), 0, 100);
   });
 }
 
@@ -95,64 +55,26 @@ function compact(result) {
   return r;
 }
 
-function pushHistory(nation, result) {
-  nation.history.unshift(compact(result));
-  // Older entries lose their bulky per-group exit polls.
-  for (let i = 2; i < nation.history.length; i++) nation.history[i].blocs = [];
-  if (nation.history.length > HISTORY_LIMIT) nation.history.length = HISTORY_LIMIT;
-}
-
-/** Commits an election / council result. Mutates state. */
+/** Records a finished count. The winner becomes the nation's current officeholder. */
 export function applyResult(state, nation, result) {
   const gov = effectiveGov(nation);
   if (result.kind === "popular") learnFromElection(state, nation, result, gov);
-  // Unrest: managed counts breed resentment; real elections let off steam.
+  // Managed counts breed resentment; real elections let off steam.
   for (const region of nation.regions) {
     const rr = result.regions.find((x) => x.id === region.id);
-    region.unrest = clamp(Math.round((region.unrest || 0) * (result.kind === "popular" ? 0.8 : 0.95) + (rr?.unrestDelta || 0)), 0, 100);
+    region.unrest = clamp(Math.round((region.unrest || 0) * 0.8 + (rr?.unrestDelta || 0)), 0, 100);
   }
-  let outcome = null;
   if (result.winnerId) {
     const winner = getPerson(state, result.winnerId);
-    const same = result.winnerId === nation.leaderId;
-    outcome = installLeader(state, nation, result.winnerId, result.seed || 1, {
-      runningMateId: gov.runningMate && result.kind === "popular" ? winner?.runningMateId : null,
-      coalition: result.coalition ? result.coalition.parties.map((p) => ({ key: p.key, seats: p.seats, name: p.name })) : null,
-      continuity: same,
-    });
-    addLog(nation, `#${result.no} ${result.title}: ${winner?.name || "?"} ${same ? "retains" : "takes"} office.`);
+    if (result.winnerId === nation.leaderId) nation.leaderTerms = (nation.leaderTerms || 0) + 1;
+    else nation.leaderTerms = 1;
+    nation.leaderId = result.winnerId;
+    if (winner) winner.terms = (winner.terms || 0) + 1;
   }
-  result.outcome = outcome;
   nation.electionCount = (nation.electionCount || 0) + 1;
-  nation.election = null;
-  pushHistory(nation, result);
-  return result;
-}
-
-/** Commits a succession. reason: death | abdication | removal | resignation */
-export function applySuccession(state, nation, result, reason) {
-  const departing = getPerson(state, nation.leaderId);
-  if (departing && reason === "death") departing.alive = false;
-  if (departing && reason !== "death") departing.popularity = clamp(departing.popularity - 10, 0, 100);
-  const succeededFromCabinet = result.winnerId;
-  if (!succeededFromCabinet) {
-    nation.leaderId = null;
-    nation.leaderTerms = 0;
-    result.outcome = null;
-  } else {
-    // The successor leaves their old post; everyone else stays.
-    for (const [office, id] of Object.entries(nation.cabinet)) if (id === succeededFromCabinet) delete nation.cabinet[office];
-    if (nation.deputyId === succeededFromCabinet) nation.deputyId = null;
-    nation.leaderId = null; // fresh term count for the successor
-    result.outcome = installLeader(state, nation, succeededFromCabinet, result.seed || nation.electionCount + 7, {
-      continuity: true,
-      keepDeputy: true,
-    });
-  }
-  addLog(nation, `${result.title}: ${departing?.name || "vacancy"} -> ${getPerson(state, result.winnerId)?.name || "nobody"}.`);
-  for (const region of nation.regions) region.unrest = clamp((region.unrest || 0) + (result.title.includes("Contested") || result.narrative.some((l) => l.includes("Contested")) ? 8 : 0), 0, 100);
-  nation.electionCount = (nation.electionCount || 0) + 1;
-  pushHistory(nation, result);
+  nation.history.unshift(compact(result));
+  for (let i = 2; i < nation.history.length; i++) nation.history[i].blocs = []; // older exit polls are dropped
+  if (nation.history.length > HISTORY_LIMIT) nation.history.length = HISTORY_LIMIT;
   return result;
 }
 
@@ -164,8 +86,7 @@ export function surveyApproval(state, nation, seed = 1) {
   const rng = createRng(seed);
   const gov = effectiveGov(nation);
   const ctx = buildContext(state, nation, [leader.id]);
-  // Under a popular system the electorate is everyone; councils still care about the public mood.
-  ctx.gov = { ...ctx.gov, electorate: null, wealthWeighted: false };
+  ctx.gov = { ...ctx.gov, electorate: null, wealthWeighted: false }; // the whole public, not just voters
   const groups = buildGroups(ctx);
   const regions = {};
   const blocs = {};
@@ -184,9 +105,8 @@ export function surveyApproval(state, nation, seed = 1) {
     b[1] += g.voters;
   }
   const national = den ? num / den : 0.5;
-  const avgUnrest = ctx.avgUnrest;
-  const revoltRisk = clamp((1 - national) * (1 - gov.protection) * (0.4 + avgUnrest / 100) * (national < 0.4 ? 1.5 : 1), 0, 1);
-  const survey = {
+  const revoltRisk = clamp((1 - national) * (1 - gov.protection) * (0.4 + ctx.avgUnrest / 100) * (national < 0.4 ? 1.5 : 1), 0, 1);
+  return {
     at: nation.electionCount,
     leaderId: leader.id,
     national,
@@ -194,7 +114,6 @@ export function surveyApproval(state, nation, seed = 1) {
     regions: nation.regions.map((r) => ({ id: r.id, name: r.name, approval: regions[r.id] ? regions[r.id][0] / regions[r.id][1] : 0.5, unrest: r.unrest || 0 })),
     blocs: Object.entries(blocs).map(([id, v]) => ({ id, approval: v[0] / v[1], voters: Math.round(v[1]) })),
   };
-  return survey;
 }
 
 // What the electorate cares about most right now (population-weighted salience).
@@ -210,7 +129,7 @@ export function issuePriorities(state, nation, region = null) {
   return ISSUE_IDS.map((id) => ({ id, weight: den ? totals[id] / den : 0 })).sort((a, b) => b.weight - a.weight);
 }
 
-// Where a region's voters sit on average (population-weighted bloc ideals).
+// Where a region's people sit on average (population-weighted group stances).
 export function regionIdeal(state, nation, region) {
   const ctx = buildContext(state, nation, []);
   ctx.gov = { ...ctx.gov, electorate: null, wealthWeighted: false };

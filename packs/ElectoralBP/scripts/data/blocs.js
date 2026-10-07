@@ -36,7 +36,7 @@ export const BLOCS = [
     salience: { trade: 1.0, economy: 0.9, labor: 0.5, infrastructure: 0.4 },
     turnout: 0.74, loyalty: 0.4, volatility: 1.0,
     traits: { charisma: 0.8, competence: 1.2, integrity: 0.8, wealth: 1.4 },
-    metrics: { economy: 1.0, diplomacy: 0.4 },
+    metrics: { economy: 1.2 },
     rivals: ["laborers", "farmers"],
   },
   {
@@ -66,7 +66,7 @@ export const BLOCS = [
     salience: { tradition: 1.0, order: 0.5, welfare: 0.4 },
     turnout: 0.8, loyalty: 0.85, volatility: 0.4,
     traits: { charisma: 0.8, competence: 0.6, integrity: 1.6, wealth: 0.2 },
-    metrics: { integrity: 0.8, stability: 0.5 },
+    metrics: { integrity: 1.0, security: 0.3 },
     rivals: ["scholars"],
   },
   {
@@ -86,7 +86,7 @@ export const BLOCS = [
     salience: { labor: 0.6, tradition: 0.7, authority: 0.8, economy: 0.7 },
     turnout: 0.88, loyalty: 0.8, volatility: 0.4,
     traits: { charisma: 0.7, competence: 0.8, integrity: 0.6, wealth: 1.6 },
-    metrics: { stability: 0.8, economy: 0.5 },
+    metrics: { security: 0.5, economy: 0.8 },
     rivals: ["laborers", "miners"],
   },
   {
@@ -106,7 +106,7 @@ export const BLOCS = [
     salience: { welfare: 0.9, tradition: 0.6, order: 0.5 },
     turnout: 0.86, loyalty: 0.85, volatility: 0.4,
     traits: { charisma: 0.6, competence: 1.0, integrity: 1.3, wealth: 0.4 },
-    metrics: { services: 1.0, stability: 0.5 },
+    metrics: { services: 1.0, security: 0.3 },
     rivals: ["youth"],
   },
   {
@@ -116,7 +116,7 @@ export const BLOCS = [
     salience: { trade: 0.9, environment: 0.6, expansion: 0.4 },
     turnout: 0.6, loyalty: 0.5, volatility: 0.9,
     traits: { charisma: 1.1, competence: 0.8, integrity: 0.9, wealth: 0.5 },
-    metrics: { food: 0.6, diplomacy: 0.6 },
+    metrics: { food: 0.6, economy: 0.5 },
     rivals: [],
   },
   {
@@ -136,7 +136,7 @@ export const BLOCS = [
     salience: { settlers: 1.0, expansion: 0.8, infrastructure: 0.6, authority: 0.5 },
     turnout: 0.5, loyalty: 0.3, volatility: 1.2,
     traits: { charisma: 1.2, competence: 0.8, integrity: 0.9, wealth: 0.4 },
-    metrics: { infrastructure: 0.8, security: 0.4 },
+    metrics: { services: 0.6, security: 0.4 },
     rivals: ["nobility"],
   },
 ];

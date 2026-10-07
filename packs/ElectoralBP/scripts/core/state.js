@@ -5,17 +5,15 @@ import { defaultMetrics } from "../data/metrics.js";
 import { BLOC_IDS } from "../data/blocs.js";
 import { clamp } from "./random.js";
 
-export const STATE_VERSION = 1;
-export const ADULT_AGE = 16;
-export const HISTORY_LIMIT = 8;
+export const STATE_VERSION = 2;
+export const HISTORY_LIMIT = 10;
 
 export function newState() {
-  return { v: STATE_VERSION, seq: 1, nations: {}, persons: {}, houses: {}, relations: {}, residents: {} };
+  return { v: STATE_VERSION, seq: 1, nations: {}, persons: {}, relations: {}, residents: {} };
 }
 
 export function nextId(state, prefix) {
-  const id = `${prefix}${(state.seq++).toString(36)}`;
-  return id;
+  return `${prefix}${(state.seq++).toString(36)}`;
 }
 
 export function createNation(state, { name, gov = "democracy", color = "§9" }) {
@@ -29,18 +27,13 @@ export function createNation(state, { name, gov = "democracy", color = "§9" }) 
     parties: [],
     metrics: defaultMetrics(),
     salience: {},
-    leaderId: null,
-    deputyId: null,
-    cabinet: {},
-    cabinetPins: {},
-    heirId: null,
-    dynasty: "",
+    leaderId: null, // the candidate currently in office (for performance voting)
     leaderTerms: 0,
-    election: null,
+    election: null, // open election, taking ballots
+    count: null, // live count in progress
     history: [],
     electionCount: 0,
     approval: null,
-    log: [],
   };
   state.nations[nation.id] = nation;
   return nation;
@@ -70,79 +63,53 @@ export function createRegion(state, nation, data = {}) {
 export function createParty(state, nation, data = {}) {
   const party = {
     id: nextId(state, "p"),
-    name: data.name || `Party ${nation.parties.length + 1}`,
+    name: data.name || "",
     color: data.color || "§7",
-    positions: data.positions || blankPositions(0),
+    positions: { ...blankPositions(0), ...(data.positions || {}) },
   };
   nation.parties.push(party);
   return party;
 }
 
+// Candidates. Names start empty: roleplayers name their own people.
 export function createPerson(state, nation, data = {}) {
   const person = {
     id: nextId(state, "c"),
     nationId: nation.id,
-    name: data.name || "Unnamed",
-    player: data.player || "",
+    name: data.name ?? "",
     partyId: data.partyId ?? null,
-    positions: data.positions || blankPositions(0),
+    positions: { ...blankPositions(0), ...(data.positions || {}) },
     focus: data.focus || [],
     targets: data.targets || [],
     charisma: data.charisma ?? 50,
     popularity: data.popularity ?? 50,
     competence: data.competence ?? 50,
-    integrity: data.integrity ?? 60,
-    loyalty: data.loyalty ?? 60,
-    funds: data.funds ?? 40,
+    integrity: data.integrity ?? 50,
+    funds: data.funds ?? 50,
     homeRegion: data.homeRegion ?? null,
     campaignRegions: data.campaignRegions || [],
-    runningMateId: data.runningMateId ?? null,
-    age: data.age ?? 40,
-    alive: data.alive ?? true,
-    dynasty: data.dynasty || "",
-    parentId: data.parentId ?? null,
-    legitimacy: data.legitimacy ?? 80,
-    clanId: data.clanId ?? null,
     terms: 0,
-    approved: data.approved ?? true,
   };
   state.persons[person.id] = person;
   return person;
 }
 
-export function createHouse(state, nation, data = {}) {
-  const house = {
-    id: nextId(state, "h"),
-    nationId: nation.id,
-    name: data.name || "New House",
-    regionId: data.regionId ?? null,
-    influence: data.influence ?? 50,
-    loyalty: data.loyalty ?? 60,
-    positions: data.positions ?? null,
-    opinions: data.opinions || {},
-  };
-  state.houses[house.id] = house;
-  return house;
-}
-
 // ---------- queries ----------
 
-export const nationPersons = (state, nation, includeDead = false) =>
-  Object.values(state.persons).filter((p) => p.nationId === nation.id && (includeDead || p.alive));
-
-export const nationHouses = (state, nation) => Object.values(state.houses).filter((h) => h.nationId === nation.id);
-
+export const nationPersons = (state, nation) => Object.values(state.persons).filter((p) => p.nationId === nation.id);
 export const getPerson = (state, id) => (id ? state.persons[id] || null : null);
 export const getParty = (nation, id) => nation.parties.find((p) => p.id === id) || null;
 export const getRegion = (nation, id) => nation.regions.find((r) => r.id === id) || null;
 
+export function displayName(p) {
+  return p && p.name ? p.name : "§7(unnamed)";
+}
+
 export function personLabel(state, nation, personOrId) {
   const p = typeof personOrId === "string" ? getPerson(state, personOrId) : personOrId;
-  if (!p) return "§7(vacant)";
+  if (!p) return "§7(nobody)";
   const party = getParty(nation, p.partyId);
-  const color = party ? party.color : "§f";
-  const tag = party ? ` §7(${party.name})` : "";
-  return `${color}${p.name}§r${tag}`;
+  return `${party ? party.color : "§f"}${displayName(p)}§r${party ? ` §7(${party.name})` : ""}`;
 }
 
 export function regionBlocShares(region) {
@@ -162,7 +129,6 @@ export function relationKey(a, b) {
 export function deleteNation(state, nationId) {
   delete state.nations[nationId];
   for (const [id, p] of Object.entries(state.persons)) if (p.nationId === nationId) delete state.persons[id];
-  for (const [id, h] of Object.entries(state.houses)) if (h.nationId === nationId) delete state.houses[id];
   for (const key of Object.keys(state.relations)) if (key.split("|").includes(nationId)) delete state.relations[key];
   for (const [name, r] of Object.entries(state.residents)) if (r.nationId === nationId) delete state.residents[name];
 }
@@ -172,22 +138,12 @@ export function deletePerson(state, personId) {
   if (!person) return;
   const nation = state.nations[person.nationId];
   delete state.persons[personId];
-  for (const p of Object.values(state.persons)) {
-    if (p.runningMateId === personId) p.runningMateId = null;
-    if (p.parentId === personId) p.parentId = null;
-  }
   if (!nation) return;
   if (nation.leaderId === personId) nation.leaderId = null;
-  if (nation.deputyId === personId) nation.deputyId = null;
-  if (nation.heirId === personId) nation.heirId = null;
-  for (const [office, id] of Object.entries(nation.cabinet)) if (id === personId) delete nation.cabinet[office];
-  for (const [office, id] of Object.entries(nation.cabinetPins)) if (id === personId) delete nation.cabinetPins[office];
-  if (nation.election) nation.election.candidates = nation.election.candidates.filter((id) => id !== personId);
-}
-
-export function addLog(nation, text) {
-  nation.log.unshift(text);
-  if (nation.log.length > 20) nation.log.length = 20;
+  if (nation.election) {
+    nation.election.candidates = nation.election.candidates.filter((id) => id !== personId);
+    for (const [p, b] of Object.entries(nation.election.ballots)) if (b.candidateId === personId) delete nation.election.ballots[p];
+  }
 }
 
 // Repairs / fills fields so older or hand-edited saves keep working.
@@ -195,11 +151,15 @@ export function normalizeState(state) {
   if (!state || typeof state !== "object") return newState();
   state.v = STATE_VERSION;
   state.seq = state.seq || 1;
-  for (const key of ["nations", "persons", "houses", "relations", "residents"]) state[key] = state[key] || {};
+  for (const key of ["nations", "persons", "relations", "residents"]) state[key] = state[key] || {};
+  delete state.houses;
   for (const nation of Object.values(state.nations)) {
     nation.metrics = { ...defaultMetrics(), ...(nation.metrics || {}) };
-    for (const k of ["settings", "salience", "cabinet", "cabinetPins"]) nation[k] = nation[k] || {};
-    for (const k of ["regions", "parties", "history", "log"]) nation[k] = nation[k] || [];
+    for (const k of Object.keys(nation.metrics)) if (!(k in defaultMetrics())) delete nation.metrics[k];
+    for (const k of ["settings", "salience"]) nation[k] = nation[k] || {};
+    for (const k of ["regions", "parties", "history"]) nation[k] = nation[k] || [];
+    nation.count = nation.count || null;
+    for (const k of ["cabinet", "cabinetPins", "deputyId", "heirId", "dynasty", "log"]) delete nation[k];
     for (const region of nation.regions) {
       region.issueMods = region.issueMods || {};
       region.lean = region.lean || {};
@@ -208,6 +168,7 @@ export function normalizeState(state) {
     }
   }
   for (const person of Object.values(state.persons)) {
+    person.name = person.name ?? "";
     person.positions = { ...blankPositions(0), ...(person.positions || {}) };
     for (const id of ISSUE_IDS) person.positions[id] = clamp(Number(person.positions[id]) || 0, -100, 100);
     person.focus = person.focus || [];

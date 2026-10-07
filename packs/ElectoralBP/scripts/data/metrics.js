@@ -1,16 +1,13 @@
-// Performance sliders (0..100, 50 = neutral). Each metric is tied to issues, so a
-// bloc that cares about Labor automatically cares about the Jobs slider.
+// Performance sliders for whoever currently holds office (0..100, 50 = average).
+// Each one is tied to issues, so voters who care about Labor watch the Jobs slider.
 
 export const METRICS = [
-  { id: "economy", name: "Economy & Wealth", issues: { economy: 1, trade: 0.6, labor: 0.3 } },
-  { id: "jobs", name: "Jobs & Wages", issues: { labor: 1, welfare: 0.5, economy: 0.4 } },
-  { id: "security", name: "Security & Defense", issues: { military: 1, order: 0.5, expansion: 0.3 } },
-  { id: "stability", name: "Order & Stability", issues: { order: 1, authority: 0.5, tradition: 0.3 } },
-  { id: "infrastructure", name: "Infrastructure", issues: { infrastructure: 1, settlers: 0.3 } },
-  { id: "diplomacy", name: "Foreign Relations", issues: { trade: 0.6, military: 0.4, expansion: 0.4 } },
-  { id: "services", name: "Public Services", issues: { welfare: 1, infrastructure: 0.3 } },
-  { id: "food", name: "Food & Harvest", issues: { environment: 0.6, trade: 0.4 }, base: 0.25 },
-  { id: "integrity", name: "Honesty & Integrity", issues: {}, base: 0.45 },
+  { id: "economy", name: "Economy", issues: { economy: 1, trade: 0.6 } },
+  { id: "jobs", name: "Jobs & Wages", issues: { labor: 1, welfare: 0.4, economy: 0.3 } },
+  { id: "security", name: "Safety & Defense", issues: { military: 1, order: 0.5, expansion: 0.3 } },
+  { id: "services", name: "Public Services", issues: { welfare: 1, infrastructure: 0.8, settlers: 0.2 } },
+  { id: "food", name: "Food & Land", issues: { environment: 0.8, trade: 0.3 }, base: 0.2 },
+  { id: "integrity", name: "Honesty", issues: { order: 0.2, authority: 0.3 }, base: 0.45 },
 ];
 
 export const METRIC_IDS = METRICS.map((m) => m.id);

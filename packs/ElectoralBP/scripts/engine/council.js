@@ -1,10 +1,9 @@
-// Council / consensus selection. Used by conclaves, officer councils and by clan or
-// noble houses choosing (or confirming) an heir. Electors ballot in rounds; weak
+// Council / consensus selection. Used by royal, clan, religious and officer councils. Electors ballot in rounds; weak
 // candidates drop out, and electors drift toward the frontrunner (bandwagoning)
 // until someone reaches the required consensus threshold.
 
 import { createRng, clamp } from "../core/random.js";
-import { getRegion, nationHouses, regionBlocShares } from "../core/state.js";
+import { regionBlocShares } from "../core/state.js";
 import { BLOC_BY_ID } from "../data/blocs.js";
 import { buildContext, blendBlocs, utility } from "./model.js";
 import { candidateSummary } from "./election.js";
@@ -41,56 +40,16 @@ function regionalElectors(ctx) {
       volatility: 0.6,
       retro: blend.retro,
       memory: {},
-      rulerLoyalty: 60,
       conviction: 0.5,
     });
   }
   return out;
 }
 
-function houseElectors(ctx, houses) {
-  return houses.map((house) => {
-    const region = getRegion(ctx.nation, house.regionId);
-    const shares = region ? regionBlocShares(region) : { nobility: 0.5, elders: 0.3, soldiers: 0.2 };
-    const mix = { ...shares };
-    mix.nobility = (mix.nobility || 0) + 0.35; // house heads skew aristocratic
-    mix.elders = (mix.elders || 0) + 0.15;
-    const blend = blendBlocs(ctx, region, mix);
-    return {
-      key: house.id,
-      name: house.name,
-      region: region || null,
-      regionId: region?.id || null,
-      weight: Math.max(1, house.influence),
-      ideal: house.positions ? { ...blend.ideal, ...house.positions } : blend.ideal,
-      salience: blend.salience,
-      traits: blend.traits,
-      loyalty: 0.7,
-      volatility: 0.5,
-      retro: blend.retro,
-      memory: {},
-      kinId: house.id,
-      opinions: house.opinions || {},
-      rulerLoyalty: house.loyalty,
-      conviction: 0.55,
-    };
-  });
-}
-
 export function buildElectors(ctx) {
-  if (ctx.gov.selection === "hereditary") {
-    const houses = nationHouses(ctx.state, ctx.nation);
-    if (houses.length) return houseElectors(ctx, houses);
-  }
   return regionalElectors(ctx);
 }
 
-/**
- * opts.heirBonus   { personId: bonus } - legal claim strength (succession)
- * opts.favoredId   the ruler's preferred candidate (loyal electors lean to them)
- * opts.fallbackId  who wins a deadlock (e.g. the legal heir)
- * opts.title       result title
- */
 export function computeCouncil(state, nation, election, seed, opts = {}) {
   const rng = createRng(seed);
   const ctx = buildContext(state, nation, election.candidates);
@@ -99,15 +58,9 @@ export function computeCouncil(state, nation, election, seed, opts = {}) {
   const n = cands.length;
   const electors = buildElectors(ctx);
   const totalWeight = electors.reduce((s, e) => s + e.weight, 0) || 1;
-  const favoredId = opts.favoredId || nation.heirId || nation.leaderId;
 
   for (const e of electors) {
-    e.heirBonus = opts.heirBonus || null;
-    e.base = cands.map((c) => {
-      let u = utility(ctx, e, c);
-      if (c.id === favoredId) u += ((e.rulerLoyalty - 50) / 50) * 0.5;
-      return u + rng.normal(0, e.conviction); // personal leanings
-    });
+    e.base = cands.map((c) => utility(ctx, e, c) + rng.normal(0, e.conviction)); // personal leanings
   }
 
   const threshold = gov.consensus || 0.5;
@@ -119,11 +72,12 @@ export function computeCouncil(state, nation, election, seed, opts = {}) {
   const maxRounds = 8;
   for (let round = 1; round <= maxRounds && winner < 0; round++) {
     const tallies = new Array(n).fill(0);
+    const leaderPrev = shares.indexOf(Math.max(...shares));
     lastVotes = electors.map((e) => {
       let best = -1;
       let bv = -Infinity;
       for (const i of active) {
-        const v = e.base[i] + rng.normal(0, 0.15) + ((1.8 * (round - 1)) / maxRounds) * shares[i];
+        const v = e.base[i] + rng.normal(0, 0.15) + ((3.5 * (round - 1)) / maxRounds) * shares[i] + (i === leaderPrev ? 0.08 * (round - 1) : 0);
         if (v > bv) {
           bv = v;
           best = i;
@@ -151,9 +105,8 @@ export function computeCouncil(state, nation, election, seed, opts = {}) {
   let deadlock = false;
   if (winner < 0) {
     deadlock = true;
-    const fb = opts.fallbackId ? cands.findIndex((c) => c.id === opts.fallbackId) : -1;
     const lastTallies = rounds[rounds.length - 1].votes;
-    winner = fb >= 0 ? fb : lastTallies.indexOf(Math.max(...lastTallies));
+    winner = lastTallies.indexOf(Math.max(...lastTallies));
   }
 
   const finalVotes = rounds[rounds.length - 1].votes;
@@ -180,6 +133,7 @@ export function computeCouncil(state, nation, election, seed, opts = {}) {
     electors: electors.map((e, k) => ({ name: e.name, weight: Math.round((e.weight / totalWeight) * 1000) / 10, vote: lastVotes[k] })),
     rounds,
     winnerIdx: winner,
+    totalAlloc: null,
     trueWinnerIdx: winner,
     deadlock,
     cast: 1000,
@@ -189,9 +143,9 @@ export function computeCouncil(state, nation, election, seed, opts = {}) {
   result.winnerId = cands[winner]?.id || null;
   const w = result.candidates[winner];
   result.narrative = [
-    `${w.color}${w.name}§r is chosen by the ${gov.assemblyName} after ${rounds.length} ballot${rounds.length > 1 ? "s" : ""}.`,
+    `${w.color}${w.name}§r is chosen by the council after ${rounds.length} ballot${rounds.length > 1 ? "s" : ""}.`,
   ];
-  if (deadlock) result.narrative.push(`§6The council deadlocked; ${opts.fallbackId ? "the legal claim decided it" : "the leading candidate was declared by acclamation"}.`);
+  if (deadlock) result.narrative.push("§6The council deadlocked; the leading candidate was declared by acclamation.");
   const backers = electors.map((e, k) => [e, lastVotes[k]]).filter(([, v]) => v === winner).sort((a, b) => b[0].weight - a[0].weight);
   if (backers.length) result.narrative.push(`Key backers: ${backers.slice(0, 3).map(([e]) => e.name).join(", ")}.`);
   const opp = electors.map((e, k) => [e, lastVotes[k]]).filter(([, v]) => v !== winner).sort((a, b) => b[0].weight - a[0].weight);

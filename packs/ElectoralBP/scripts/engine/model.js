@@ -14,7 +14,7 @@
 //   record     retrospective voting on the performance sliders, routed through
 //              which metrics this group actually cares about
 //   loyalty    party leanings of the region and learned voting habits
-//   kin        clan / bloodline / legitimacy (councils & hereditary systems)
+//   kin        clan loyalty: councils favor candidates from their own region
 //
 // Groups then pick with a multinomial logit, with correlated national, regional
 // and group-level shocks (the "polling error").
@@ -70,7 +70,6 @@ export function buildContext(state, nation, candidateIds = []) {
     state, nation, gov, candidates, dip, natSal,
     incumbentId: nation.leaderId,
     incumbentParty: leader ? leader.partyId : null,
-    rulerDynasty: leader ? leader.dynasty : nation.dynasty,
     leaderTerms: nation.leaderTerms || 0,
     avgUnrest,
     W: gov.weights,
@@ -235,8 +234,6 @@ export function utility(ctx, group, cand, detail = false) {
     if (ctx.dip.wars > 0) record += 0.15; // rally round the flag
   } else if (ctx.incumbentParty && cand.partyId === ctx.incumbentParty) {
     record += group.retro * 0.6 * W.retro;
-  } else if (ctx.gov.selection === "hereditary" && ctx.rulerDynasty && cand.dynasty === ctx.rulerDynasty) {
-    record += group.retro * 0.3 * W.retro;
   }
 
   // Partisan loyalty and learned habits.
@@ -246,12 +243,9 @@ export function utility(ctx, group, cand, detail = false) {
     loyalty += (group.memory[cand.partyId] || 0) * group.loyalty * W.party;
   }
 
-  // Kinship, legitimacy and personal opinions (council electors).
+  // Clan loyalty: in clan/royal councils a region strongly backs its own.
   let kin = 0;
-  if (group.kinId && cand.clanId === group.kinId) kin += 0.8 * (W.kin || 0.5);
-  if (group.opinions && group.opinions[cand.id]) kin += (group.opinions[cand.id] / 100) * 1.2;
-  if (W.legitimacy) kin += ((cand.legitimacy - 50) / 50) * 0.5 * W.legitimacy;
-  if (group.heirBonus && group.heirBonus[cand.id]) kin += group.heirBonus[cand.id];
+  if (W.kin && group.region && cand.homeRegion === group.region.id) kin += 0.5 * W.kin;
 
   const total = loss + emphasis + valence + local + courting + record + loyalty + kin;
   if (!detail) return total;
@@ -267,7 +261,7 @@ export const FACTOR_LABELS = {
   courting: "courting voter groups",
   record: "the government's record",
   loyalty: "party loyalty",
-  kin: "kinship & legitimacy",
+  kin: "home-region loyalty",
 };
 
 export function turnoutFor(ctx, group, utils, rng) {

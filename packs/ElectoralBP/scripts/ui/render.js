@@ -1,24 +1,113 @@
-// Text rendering for results, nations and voter profiles.
+// Text rendering for nations, candidates, regions and results.
 
-import { BLOC_BY_ID } from "../data/blocs.js";
-import { ISSUE_BY_ID } from "../data/issues.js";
+import { BLOC_BY_ID, REGION_TEMPLATES } from "../data/blocs.js";
+import { ISSUE_BY_ID, ISSUE_IDS } from "../data/issues.js";
 import { METRICS, gradeMetric } from "../data/metrics.js";
-import { effectiveGov, GOV_BY_ID, officeTitle } from "../data/governments.js";
-import { getPerson, personLabel } from "../core/state.js";
-import { lineOfSuccession } from "../engine/succession.js";
+import { effectiveGov, METHODS } from "../data/governments.js";
+import { displayName, getParty, getPerson, personLabel, regionBlocShares } from "../core/state.js";
+import { issuePriorities, regionIdeal } from "../engine/apply.js";
 import { bar, fmt, pct } from "./forms.js";
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 
+export function timeLeft(ms) {
+  if (ms <= 0) return "closing now";
+  const m = Math.ceil(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m left` : `${m} min left`;
+}
+
+export function statusLine(state, nation) {
+  if (nation.count) return `§6Counting: ${nation.count.result.title}`;
+  const e = nation.election;
+  if (!e) return "";
+  const left = e.closesAt ? ` · ${timeLeft(e.closesAt - Date.now())}` : "";
+  return `§aVoting open: ${e.title}${left}`;
+}
+
+export function nationSummary(state, nation) {
+  const gov = effectiveGov(nation);
+  const lines = [`${nation.color}§l${nation.name}§r`, `§7Style: §f${gov.name}§7 - ${gov.description}`];
+  lines.push(`§7In office (${gov.leaderTitle}): §f${nation.leaderId ? personLabel(state, nation, nation.leaderId) : "nobody yet"}`);
+  lines.push(`§7Counties: §f${nation.regions.length}§7 · Candidates: §f${Object.values(state.persons).filter((p) => p.nationId === nation.id).length}`);
+  const status = statusLine(state, nation);
+  if (status) {
+    lines.push("", status);
+    const e = nation.election;
+    if (e && !nation.count) {
+      lines.push(`§7On the ballot: §f${e.candidates.map((id) => displayName(getPerson(state, id))).join(", ")}`);
+      lines.push(`§7Player ballots cast: §f${Object.keys(e.ballots).length}`);
+    }
+  }
+  const last = nation.history[0];
+  if (last) {
+    const w = last.candidates[last.winnerIdx];
+    lines.push("", `§7Last election: §f${last.title}§7 - won by ${w ? `${w.color}${w.name}` : "nobody"}`);
+  }
+  return lines.join("\n");
+}
+
+export function metricsPage(nation) {
+  return METRICS.map((m) => {
+    const v = nation.metrics[m.id] ?? 50;
+    return `§f${m.name}§r ${bar(v / 100, 16, v >= 50 ? "§a" : "§c")} ${v} ${gradeMetric(v)}`;
+  }).join("\n");
+}
+
+export function stanceText(issueId, v) {
+  const i = ISSUE_BY_ID[issueId];
+  const strength = Math.abs(v) >= 65 ? "Strongly " : "";
+  return `${strength}${v < 0 ? i.low : i.high}`;
+}
+
+export function personCard(state, nation, p) {
+  const party = getParty(nation, p.partyId);
+  const home = nation.regions.find((r) => r.id === p.homeRegion);
+  const lines = [
+    `${party ? party.color : "§f"}§l${displayName(p)}§r`,
+    `§7Party: §f${party ? party.name : "Independent"}§7 · From: §f${home ? home.name : "-"}§7 · Times elected: §f${p.terms || 0}`,
+    `§7Popularity §f${p.popularity}§7 · Charisma §f${p.charisma}§7 · Competence §f${p.competence}§7 · Honesty §f${p.integrity}§7 · Money §f${p.funds}`,
+  ];
+  if (p.focus.length) lines.push(`§7Main issues: §e${p.focus.map((f) => `${ISSUE_BY_ID[f].name} (${stanceText(f, p.positions[f])})`).join(", ")}`);
+  if (p.targets.length) lines.push(`§7Appeals to: §b${p.targets.map((b) => BLOC_BY_ID[b]?.name).join(", ")}`);
+  if (p.campaignRegions.length) lines.push(`§7Campaigning in: §a${p.campaignRegions.map((id) => nation.regions.find((r) => r.id === id)?.name).filter(Boolean).join(", ")}`);
+  const other = ISSUE_IDS.filter((id) => !p.focus.includes(id) && Math.abs(p.positions[id]) >= 30);
+  if (other.length) lines.push(`§7Other stances: §f${other.map((id) => `${ISSUE_BY_ID[id].name}: ${stanceText(id, p.positions[id])}`).join(", ")}`);
+  return lines.join("\n");
+}
+
+export function regionProfile(state, nation, region) {
+  const shares = regionBlocShares(region);
+  const pri = issuePriorities(state, nation, region).slice(0, 4);
+  const ideal = regionIdeal(state, nation, region);
+  const lean = ISSUE_IDS.filter((id) => Math.abs(ideal[id]) >= 20).sort((a, b) => Math.abs(ideal[b]) - Math.abs(ideal[a])).slice(0, 4);
+  const lines = [
+    `§l${region.name}§r §7(${REGION_TEMPLATES.find((t) => t.id === region.template)?.name || "Custom"})`,
+    `§7Population §f${fmt(region.population)}§7 · Voting power §f${region.power}${region.autoPower === false ? " (manual)" : ""}`,
+    "",
+    "§6Who lives here: §f" + Object.entries(shares).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([b, s]) => `${BLOC_BY_ID[b].name} ${pct(s, 0)}`).join(", "),
+    "§6Cares most about: §f" + pri.map((p) => ISSUE_BY_ID[p.id].name).join(", "),
+    "§6Leans toward: §f" + (lean.map((id) => stanceText(id, ideal[id])).join(", ") || "the middle"),
+  ];
+  const leans = nation.parties.filter((p) => region.lean[p.id]).map((p) => `${p.color}${p.name} ${region.lean[p.id] > 0 ? "+" : ""}${Math.round(region.lean[p.id] * 100)}`);
+  if (leans.length) lines.push("§6Party loyalty: " + leans.join("§7, "));
+  const habits = [];
+  for (const [b, mem] of Object.entries(region.memory || {})) {
+    for (const [pid, v] of Object.entries(mem)) {
+      const p = nation.parties.find((x) => x.id === pid);
+      if (p && Math.abs(v) >= 0.15) habits.push(`${BLOC_BY_ID[b]?.name} ${v > 0 ? "now back" : "turned on"} ${p.color}${p.name}§7`);
+    }
+  }
+  if (habits.length) lines.push("§6Remembered from past votes: §7" + habits.slice(0, 5).join("; "));
+  if (region.unrest) lines.push(`§cUnrest: ${region.unrest}`);
+  return lines.join("\n");
+}
+
+// ---------- results ----------
+
 // Which numbers a viewer sees: official (managed) or true counts.
 export function viewOf(result, internal) {
   if (result.official && !internal) {
-    return {
-      national: result.official.national,
-      region: (r) => result.official.regions[r.id] || r.votes,
-      turnout: result.official.turnout,
-      official: true,
-    };
+    return { national: result.official.national, region: (r) => result.official.regions[r.id] || r.votes, turnout: result.official.turnout, official: true };
   }
   return { national: result.national, region: (r) => r.votes, turnout: result.turnout, official: false };
 }
@@ -30,7 +119,7 @@ export function candidateRows(result, votes, alloc = null, allocLabel = "") {
     .sort((a, b) => votes[b[1]] - votes[a[1]])
     .map(([c, i]) => {
       const share = votes[i] / total;
-      const win = i === result.winnerIdx ? " §a[WIN]" : "";
+      const win = i === result.winnerIdx ? " §a[WINNER]" : "";
       const party = c.partyName ? ` §7(${c.partyName})` : "";
       const al = alloc ? `  §f${alloc[i]} ${allocLabel}` : "";
       return `${c.color}${c.name}§r${party}${win}\n ${bar(share, 24, c.color)} §f${pct(share)}§7 · ${fmt(votes[i])}${al}`;
@@ -38,78 +127,54 @@ export function candidateRows(result, votes, alloc = null, allocLabel = "") {
     .join("\n");
 }
 
-export function resultSummary(state, nation, result, internal) {
+export function resultSummary(result, internal) {
   const v = viewOf(result, internal);
-  const lines = [];
-  lines.push(`§l${result.title}§r  §7#${result.no} · ${result.methodName}`);
+  const lines = [`§l${result.title}§r  §7${result.methodName}`];
   if (result.kind === "popular") {
-    lines.push(`§7Turnout: §f${pct(v.turnout)}§7 of ${fmt(result.eligible)} eligible${result.playerBallots ? ` · ${result.playerBallots} player ballot(s)` : ""}`);
-    if (v.official) lines.push("§8Official figures as published by the government.");
-    if (!v.official && result.official) lines.push("§c§lINTERNAL ASSESSMENT§r §7(true counts)");
+    lines.push(`§7Turnout: §f${pct(v.turnout)}§7 of ${fmt(result.eligible)} voters${result.playerBallots ? ` · ${result.playerBallots} player ballot(s)` : ""}`);
+    if (v.official) lines.push("§8Official figures.");
+    if (!v.official && result.official) lines.push("§c§lTRUE COUNT§r §7(only admins see this)");
   }
-  lines.push("");
-  if (result.candidates.length) {
-    lines.push(candidateRows(result, v.national, result.alloc, result.allocLabel || ""));
-  }
+  lines.push("", candidateRows(result, v.national, result.alloc, result.allocLabel || ""));
   if (result.coalition) {
     const co = result.coalition;
-    lines.push("", `§eGoverning coalition§r (${co.seats}/${co.totalSeats}, majority ${co.majority}${co.minority ? ", §cminority§e" : ""}):`);
-    for (const p of co.parties) lines.push(` • ${p.name}: ${p.seats} seats`);
+    lines.push("", `§eGoverning ${co.parties.length > 1 ? "coalition" : "party"}§r: ${co.parties.map((p) => `${p.name} (${p.seats})`).join(" + ")} = ${co.seats}/${co.totalSeats}${co.minority ? " §c(minority)" : ""}`);
   }
   if (result.narrative?.length) {
-    lines.push("", "§6Analysis");
+    lines.push("", "§6Why it went this way");
     for (const l of result.narrative) if (internal || !l.includes("[Internal]")) lines.push(` • ${l}`);
-  }
-  if (result.outcome) {
-    const gov = effectiveGov(nation);
-    lines.push("", "§6Outcome");
-    lines.push(` ${gov.leaderTitle}: ${personLabel(state, nation, result.outcome.leaderId)}`);
-    lines.push(` ${gov.deputyTitle}: ${personLabel(state, nation, result.outcome.deputyId)}`);
-    for (const n of result.outcome.notes || []) lines.push(` §7${n}`);
   }
   return lines.join("\n");
 }
 
 export function regionButton(result, region, internal) {
-  const v = viewOf(result, internal);
-  const votes = v.region(region);
+  const votes = viewOf(result, internal).region(region);
   const total = sum(votes);
   if (!total) return `${region.name}\n§7no eligible voters`;
   const order = votes.map((x, i) => [x, i]).sort((a, b) => b[0] - a[0]);
   const w = result.candidates[order[0][1]];
-  const margin = (order[0][0] - (order[1]?.[0] || 0)) / total;
-  return `${region.name}\n${w.color}${w.name}§r +${pct(margin, 1)}`;
+  return `${region.name}\n${w.color}${w.name}§r +${pct((order[0][0] - (order[1]?.[0] || 0)) / total, 1)}`;
 }
 
-export function regionDetail(state, nation, result, region, internal) {
-  const v = viewOf(result, internal);
-  const votes = v.region(region);
+export function regionDetail(result, region, internal) {
+  const votes = viewOf(result, internal).region(region);
   const lines = [`§l${region.name}§r`];
   if (result.kind === "popular") {
     const cast = sum(votes);
-    lines.push(`§7Eligible: §f${fmt(region.eligible)}§7 · Ballots: §f${fmt(cast)}§7 · Turnout: §f${pct(region.eligible ? cast / region.eligible : 0)}`);
-    if (region.power) lines.push(`§7Voting power: §f${region.power}`);
+    lines.push(`§7Voters: §f${fmt(region.eligible)}§7 · Ballots: §f${fmt(cast)}§7 · Turnout: §f${pct(region.eligible ? cast / region.eligible : 0)}§7 · Power: §f${region.power}`);
   }
-  lines.push("");
-  lines.push(candidateRows(result, votes, region.alloc, result.allocLabel || ""));
+  lines.push("", candidateRows(result, votes, region.alloc, result.allocLabel || ""));
   if (region.factor && (internal || !result.official)) lines.push("", `§6Why:§r the winner's edge here came mostly from §e${region.factor}§r.`);
-  if (internal && region.unrestDelta) lines.push(`§cUnrest from the managed count: +${region.unrestDelta}`);
   return lines.join("\n");
 }
 
 export function blocsPage(result) {
-  const lines = ["§lHow each group voted§r §7(exit poll)", ""];
+  const lines = ["§lHow each group voted§r", ""];
   for (const b of result.blocs.slice().sort((x, y) => sum(y.votes) - sum(x.votes))) {
     const total = sum(b.votes) || 1;
     const order = b.votes.map((x, i) => [x, i]).sort((a, c) => c[0] - a[0]);
-    lines.push(`§f${b.name}§7 · turnout ${pct(b.turnout, 0)} · ${fmt(total)} votes`);
-    lines.push(
-      " " +
-        order
-          .filter(([x]) => x / total >= 0.02)
-          .map(([x, i]) => `${result.candidates[i].color}${result.candidates[i].name.split(" ")[0]} ${pct(x / total, 0)}`)
-          .join("§7, ")
-    );
+    lines.push(`§f${b.name}§7 · turnout ${pct(b.turnout, 0)}`);
+    lines.push(" " + order.filter(([x]) => x / total >= 0.02).map(([x, i]) => `${result.candidates[i].color}${result.candidates[i].name} ${pct(x / total, 0)}`).join("§7, "));
   }
   return lines.join("\n");
 }
@@ -127,69 +192,10 @@ export function roundsPage(result) {
     if (r.note) lines.push(` §7${r.note}`);
     lines.push("");
   }
-  if (result.electors) {
-    lines.push("§eFinal votes of the electors");
-    for (const e of result.electors) {
-      const c = result.candidates[e.vote];
-      lines.push(` ${e.name} §7(${e.weight}%)§r -> ${c ? `${c.color}${c.name}` : "§7abstain"}`);
-    }
-  }
   return lines.join("\n");
 }
 
-export function governmentPage(state, nation) {
-  const gov = effectiveGov(nation);
-  const lines = [];
-  lines.push(`${nation.color}§l${nation.name}§r §7· ${GOV_BY_ID[nation.gov]?.name || nation.gov}`);
-  lines.push(`§7${gov.description}`);
-  lines.push("");
-  lines.push(`§6${gov.leaderTitle}:§r ${personLabel(state, nation, nation.leaderId)}${nation.leaderId ? ` §7(term ${nation.leaderTerms || 1}${gov.termLimit ? ` of ${gov.termLimit}` : ""})` : ""}`);
-  lines.push(`§6${gov.deputyTitle}:§r ${personLabel(state, nation, nation.deputyId)}`);
-  const heir = getPerson(state, nation.heirId);
-  if (heir) lines.push(`§6Designated heir:§r ${personLabel(state, nation, heir)}`);
-  lines.push("", "§6Cabinet");
-  for (const officeId of gov.offices) lines.push(` §7${officeTitle(gov, officeId)}:§r ${personLabel(state, nation, nation.cabinet[officeId])}`);
-  const line = lineOfSuccession(state, nation).slice(0, 5);
-  lines.push("", "§6Line of succession");
-  if (!line.length) lines.push(gov.succession === "council" ? ` §7Chosen by the ${gov.assemblyName}.` : " §7(empty)");
-  line.forEach((l, i) => lines.push(` ${i + 1}. ${personLabel(state, nation, l.person)} §7- ${l.why}`));
-  if (nation.approval) {
-    const a = nation.approval;
-    lines.push("", `§6Approval:§r ${bar(a.national, 20, a.national >= 0.5 ? "§a" : "§c")} ${pct(a.national)}`);
-    if (a.revoltRisk > 0.25) lines.push(`§cUnrest warning: revolt risk ${pct(a.revoltRisk, 0)}`);
-  }
-  const last = nation.history[0];
-  if (last) {
-    const w = last.candidates[last.winnerIdx];
-    lines.push("", `§7Last contest: #${last.no} ${last.title} -> ${w ? `${w.color}${w.name}` : "none"}`);
-  }
-  if (nation.election) lines.push("", `§a§lOPEN:§r ${nation.election.title} §7(${nation.election.candidates.length} candidates, ${Object.keys(nation.election.ballots).length} player ballots)`);
-  return lines.join("\n");
+export function methodName(id) {
+  return METHODS[id]?.name || id;
 }
 
-export function metricsPage(nation) {
-  return METRICS.map((m) => {
-    const v = nation.metrics[m.id] ?? 50;
-    return `§f${m.name}§r ${bar(v / 100, 16, v >= 50 ? "§a" : "§c")} ${v} ${gradeMetric(v)}`;
-  }).join("\n");
-}
-
-export function personCard(state, nation, p) {
-  const party = nation.parties.find((x) => x.id === p.partyId);
-  const lines = [
-    `${party ? party.color : "§f"}§l${p.name}§r${p.player ? ` §7[player: ${p.player}]` : ""}${p.alive ? "" : " §c(deceased)"}`,
-    `§7Party: §f${party ? party.name : "Independent"}§7 · Age: §f${p.age}§7 · Terms served: §f${p.terms || 0}`,
-    `§7Popularity §f${p.popularity}§7 · Charisma §f${p.charisma}§7 · Competence §f${p.competence}`,
-    `§7Integrity §f${p.integrity}§7 · Loyalty §f${p.loyalty}§7 · Funds §f${p.funds}`,
-  ];
-  if (p.dynasty) lines.push(`§7Bloodline: §f${p.dynasty}§7 · Legitimacy §f${p.legitimacy}${p.parentId ? `§7 · Parent: §f${getPerson(state, p.parentId)?.name || "?"}` : ""}`);
-  if (p.clanId) lines.push(`§7House/Clan: §f${state.houses[p.clanId]?.name || "?"}`);
-  if (p.focus.length) lines.push(`§7Campaigns on: §e${p.focus.map((f) => ISSUE_BY_ID[f]?.name).join(", ")}`);
-  if (p.targets.length) lines.push(`§7Courts: §b${p.targets.map((b) => BLOC_BY_ID[b]?.name).join(", ")}`);
-  const strong = Object.entries(p.positions).filter(([, v]) => Math.abs(v) >= 40).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 5);
-  if (strong.length) {
-    lines.push("§7Key stances:");
-    for (const [id, v] of strong) lines.push(`  §f${ISSUE_BY_ID[id].name}: ${v < 0 ? ISSUE_BY_ID[id].low : ISSUE_BY_ID[id].high} §7(${v > 0 ? "+" : ""}${v})`);
-  }
-  return lines.join("\n");
-}

@@ -5,20 +5,15 @@
 import { BLOC_BY_ID } from "../data/blocs.js";
 import { ISSUE_BY_ID } from "../data/issues.js";
 import { METHODS } from "../data/governments.js";
-import { ADULT_AGE, getParty, getPerson, getRegion, nationPersons, nextId } from "../core/state.js";
+import { displayName, getParty, getPerson, getRegion, nationPersons, nextId } from "../core/state.js";
 import { createRng, clamp, softmax } from "../core/random.js";
 import { buildContext, buildGroups, utility, turnoutFor, FACTOR_LABELS } from "./model.js";
 import { computeCouncil } from "./council.js";
 
 // ---------- setup ----------
 
-export function eligibleCandidates(state, nation, gov) {
-  return nationPersons(state, nation).filter((p) => {
-    if (p.age < ADULT_AGE) return false;
-    if (gov.vetting && !p.approved) return false;
-    if (gov.termLimit > 0 && p.id === nation.leaderId && (nation.leaderTerms || 0) >= gov.termLimit) return false;
-    return true;
-  });
+export function eligibleCandidates(state, nation) {
+  return nationPersons(state, nation).filter((p) => p.name);
 }
 
 export function openElection(state, nation, gov, { candidates, method, title, endorsedId }) {
@@ -27,6 +22,7 @@ export function openElection(state, nation, gov, { candidates, method, title, en
     kind: gov.selection === "council" ? "council" : "popular",
     method: method || gov.method,
     title: title || `${gov.leaderTitle} Election`,
+    opened: Date.now(),
     candidates: candidates.slice(),
     ballots: {},
     endorsedId: endorsedId || null,
@@ -438,7 +434,7 @@ export function candidateSummary(state, nation, ids) {
   return ids.map((id) => {
     const p = getPerson(state, id);
     const party = getParty(nation, p?.partyId);
-    return { id, name: p ? p.name : "?", partyId: p?.partyId || null, partyName: party?.name || "", color: party?.color || "§f" };
+    return { id, name: displayName(p), partyId: p?.partyId || null, partyName: party?.name || "", color: party?.color || "§f" };
   });
 }
 

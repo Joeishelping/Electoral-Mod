@@ -2,7 +2,7 @@
 
 const props = new Map();
 export const _messages = [];
-export const _hooks = { startup: [], scriptEvent: [], worldLoad: [] };
+export const _hooks = { startup: [], scriptEvent: [], worldLoad: [], interval: [] };
 export const _players = [];
 
 export const world = {
@@ -22,6 +22,7 @@ export const world = {
 export const system = {
   run: (fn) => setImmediate(fn),
   runTimeout: (fn) => setImmediate(fn),
+  runInterval: (fn) => { _hooks.interval.push(fn); return _hooks.interval.length; },
   runJob: (gen) => {
     const step = () => {
       for (let i = 0; i < 10; i++) if (gen.next().done) return;

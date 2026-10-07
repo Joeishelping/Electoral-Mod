@@ -1,30 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { newState, createNation, createRegion, createParty, createPerson } from "../packs/ElectoralBP/scripts/core/state.js";
-import { generateNation } from "../packs/ElectoralBP/scripts/engine/generate.js";
 import { computeElection, eligibleCandidates, openElection } from "../packs/ElectoralBP/scripts/engine/election.js";
-import { applyResult, applySuccession, surveyApproval } from "../packs/ElectoralBP/scripts/engine/apply.js";
-import { computeSuccession, lineOfSuccession } from "../packs/ElectoralBP/scripts/engine/succession.js";
+import { surveyApproval } from "../packs/ElectoralBP/scripts/engine/apply.js";
+import { beginCount, finishCount, tickCount } from "../packs/ElectoralBP/scripts/engine/count.js";
 import { runForecastSync } from "../packs/ElectoralBP/scripts/engine/forecast.js";
 import { effectiveGov, GOVERNMENTS } from "../packs/ElectoralBP/scripts/data/governments.js";
 import { setStance } from "../packs/ElectoralBP/scripts/engine/diplomacy.js";
+import { buildNation } from "./helpers.js";
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
+const election = (state, nation, ids, extra = {}) => openElection(state, nation, effectiveGov(nation), { candidates: ids, ...extra });
 
-function election(state, nation, ids, extra = {}) {
-  return openElection(state, nation, effectiveGov(nation), { candidates: ids, ...extra });
-}
-
-// A two-region toy nation where the right answer is obvious.
+// Two counties where the right answer is obvious.
 function toyNation() {
   const s = newState();
   const n = createNation(s, { name: "Toy", gov: "democracy" });
   const mine = createRegion(s, n, { name: "Mines", population: 10000, power: 6, blocs: { miners: 80, laborers: 20 } });
   const port = createRegion(s, n, { name: "Port", population: 4000, power: 3, blocs: { merchants: 70, sailors: 30 } });
-  const workers = createParty(s, n, { name: "Workers", positions: {} });
-  const traders = createParty(s, n, { name: "Traders", positions: {} });
-  const labor = createPerson(s, n, { name: "Labor Candidate", partyId: workers.id, positions: { economy: -40, welfare: 60, labor: 80, military: 0, order: 0, tradition: 0, environment: -50, trade: -10, expansion: 0, infrastructure: 60, authority: 0, settlers: 0 }, focus: ["labor"], targets: ["miners"] });
-  const trade = createPerson(s, n, { name: "Trade Candidate", partyId: traders.id, positions: { economy: 70, welfare: -30, labor: -50, military: 0, order: 20, tradition: 0, environment: 0, trade: 80, expansion: 0, infrastructure: 40, authority: 0, settlers: 30 }, focus: ["trade"], targets: ["merchants"] });
+  const workers = createParty(s, n, { name: "Workers" });
+  const traders = createParty(s, n, { name: "Traders" });
+  const labor = createPerson(s, n, { name: "Labor", partyId: workers.id, positions: { economy: -40, welfare: 60, labor: 80, environment: -50, infrastructure: 60 }, focus: ["labor"], targets: ["miners"] });
+  const trade = createPerson(s, n, { name: "Trade", partyId: traders.id, positions: { economy: 70, welfare: -30, labor: -50, trade: 80, infrastructure: 40, settlers: 30 }, focus: ["trade"], targets: ["merchants"] });
   return { s, n, mine, port, labor, trade };
 }
 
@@ -34,13 +31,12 @@ test("voter groups follow their interests", () => {
   const reg = (id) => r.regions.find((x) => x.id === id);
   assert.equal(reg(mine.id).winner, 0, "miners back the labor candidate");
   assert.equal(reg(port.id).winner, 1, "the port backs the trade candidate");
-  assert.equal(r.winnerIdx, 0, "bigger mining region carries the electors");
-  assert.equal(r.alloc[0], 6);
+  assert.equal(r.winnerIdx, 0, "bigger mining county carries the electors");
   const miners = r.blocs.find((b) => b.id === "miners");
   assert.ok(miners.votes[0] / sum(miners.votes) > 0.75);
 });
 
-test("performance sliders swing the incumbent", () => {
+test("performance sliders swing the officeholder", () => {
   const shares = [];
   for (const level of [10, 90]) {
     const { s, n, labor, trade } = toyNation();
@@ -52,105 +48,114 @@ test("performance sliders swing the incumbent", () => {
   assert.ok(shares[1] - shares[0] > 0.1, `good record should help: ${shares}`);
 });
 
-test("war raises the salience of security and rallies the incumbent", () => {
+test("war rallies voters behind the officeholder", () => {
   const { s, n, labor, trade } = toyNation();
   n.leaderId = labor.id;
   const peace = computeElection(s, n, election(s, n, [labor.id, trade.id]), 3);
-  const other = createNation(s, { name: "Enemy" });
-  setStance(s, n.id, other.id, "war");
+  setStance(s, n.id, createNation(s, { name: "Enemy" }).id, "war");
   const war = computeElection(s, n, election(s, n, [labor.id, trade.id]), 3);
   assert.ok(war.national[0] / sum(war.national) > peace.national[0] / sum(peace.national));
 });
 
-test("every government type runs a full cycle", () => {
+test("unnamed candidates never reach the ballot", () => {
+  const s = newState();
+  const { n } = buildNation(s, "democracy");
+  assert.equal(eligibleCandidates(s, n).length, 3);
+});
+
+test("every voting style counts live from start to finish", () => {
   for (const g of GOVERNMENTS) {
     const s = newState();
-    const n = generateNation(s, { gov: g.id, seed: 5, regions: 5 });
-    const gov = effectiveGov(n);
-    assert.ok(n.leaderId, `${g.id} has a leader`);
-    assert.equal(Object.keys(n.cabinet).length, gov.offices.length, `${g.id} cabinet filled`);
-    if (gov.selection !== "hereditary") {
-      const ids = eligibleCandidates(s, n, gov).slice(0, 4).map((p) => p.id);
-      const e = election(s, n, ids);
-      const r = computeElection(s, n, e, 11);
-      assert.ok(r.winnerId, `${g.id} produced a winner`);
-      assert.ok(r.narrative.length >= 1);
-      applyResult(s, n, r);
-      assert.equal(n.leaderId, r.winnerId);
-      assert.equal(n.history.length, 1);
-      const f = runForecastSync(s, n, election(s, n, ids), 20);
-      assert.ok(Math.abs(sum(f.winProb) - 1) < 1e-9);
+    const { n, cands } = buildNation(s, g.id, 5);
+    n.leaderId = cands[0].id;
+    election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id });
+    const opening = beginCount(s, n, 11, 0);
+    assert.ok(opening[0].includes("Polls are closed"));
+    let t = 0;
+    let steps = 0;
+    let headline = null;
+    while (n.count) {
+      assert.deepEqual(tickCount(s, n, t).lines, [], "nothing is revealed before it is due");
+      t += n.count.intervalMs;
+      const r = tickCount(s, n, t);
+      assert.ok(r.lines.length > 0);
+      for (const l of r.lines) assert.doesNotMatch(l, /undefined|NaN/);
+      if (r.headline) headline = r.headline;
+      steps++;
     }
-    const line = lineOfSuccession(s, n);
-    const succ = computeSuccession(s, n, "death", 9);
-    const before = n.leaderId;
-    applySuccession(s, n, succ, "death");
-    assert.equal(s.persons[before].alive, false);
-    if (succ.winnerId) assert.equal(n.leaderId, succ.winnerId);
-    assert.ok(line.length > 0 || gov.succession === "council", `${g.id} has a line of succession`);
-    assert.ok(surveyApproval(s, n, 1) || !n.leaderId);
+    assert.ok(steps >= 2, `${g.id} revealed in steps`);
+    assert.ok(headline, `${g.id} announced a winner`);
+    assert.equal(n.election, null);
+    assert.equal(n.history.length, 1);
+    assert.equal(n.leaderId, n.history[0].winnerId);
+    assert.ok(surveyApproval(s, n, 1));
+    const e2 = election(s, n, cands.map((c) => c.id));
+    const f = runForecastSync(s, n, e2, 20);
+    assert.ok(Math.abs(sum(f.winProb) - 1) < 1e-9);
     JSON.stringify(s);
   }
 });
 
-test("monarchy primogeniture passes the crown to the eldest child", () => {
+test("skipping the count gives the same winner", () => {
   const s = newState();
-  const n = generateNation(s, { gov: "monarchy", seed: 77, regions: 4 });
-  n.settings.confirmation = false;
-  const kids = Object.values(s.persons).filter((p) => p.parentId === n.leaderId).sort((a, b) => b.age - a.age);
-  const line = lineOfSuccession(s, n);
-  assert.equal(line[0].person.id, kids[0].id);
-  // the eldest child's own child comes before the ruler's younger children
-  const grandchild = Object.values(s.persons).find((p) => p.parentId === kids[0].id);
-  assert.equal(line[1].person.id, grandchild.id);
-  const r = computeSuccession(s, n, "death", 1);
-  assert.equal(r.winnerId, kids[0].id);
+  const { n, cands } = buildNation(s, "democracy", 9);
+  election(s, n, cands.map((c) => c.id));
+  beginCount(s, n, 21, 0);
+  const expected = n.count.result.winnerId;
+  const res = finishCount(s, n, 0);
+  assert.ok(res.done);
+  assert.equal(n.history[0].winnerId, expected);
 });
 
-test("managed elections publish inflated numbers but keep the truth internally", () => {
-  const s = newState();
-  const n = generateNation(s, { gov: "singleparty", seed: 21, regions: 5 });
-  const ids = eligibleCandidates(s, n, effectiveGov(n)).slice(0, 3).map((p) => p.id);
-  if (!ids.includes(n.leaderId)) ids[0] = n.leaderId;
-  const r = computeElection(s, n, election(s, n, ids, { endorsedId: n.leaderId }), 4);
-  const idx = r.candidates.findIndex((c) => c.id === n.leaderId);
-  if (r.official) {
-    assert.ok(r.official.national[idx] / sum(r.official.national) > r.national[idx] / sum(r.national));
-    assert.ok(r.official.turnout >= r.turnout);
+test("the projection is called before the last county reports", () => {
+  let called = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const s = newState();
+    const { n, cands } = buildNation(s, "singleparty", seed);
+    n.leaderId = cands[0].id;
+    election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id });
+    beginCount(s, n, seed, 0);
+    let t = 0;
+    while (n.count) {
+      t += 1e6;
+      const r = tickCount(s, n, t);
+      if (r.lines.some((l) => l.includes("PROJECTION"))) called++;
+    }
   }
+  assert.ok(called > 10, `managed elections are called early (${called}/20)`);
+});
+
+test("managed elections publish inflated numbers but keep the truth", () => {
+  const s = newState();
+  const { n, cands } = buildNation(s, "singleparty", 21);
+  n.leaderId = cands[0].id;
+  const r = computeElection(s, n, election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id }), 4);
+  assert.ok(r.official, "official figures exist");
+  assert.ok(r.official.national[0] / sum(r.official.national) > r.national[0] / sum(r.national));
   assert.ok(r.turnout > 0.85, "enforced turnout");
 });
 
-test("parliament forms a majority coalition", () => {
+test("parliament forms a majority government", () => {
   const s = newState();
-  const n = generateNation(s, { gov: "parliament", seed: 8, regions: 8 });
-  const gov = effectiveGov(n);
-  const ids = n.parties.map((p) => eligibleCandidates(s, n, gov).find((c) => c.partyId === p.id).id);
-  const r = computeElection(s, n, election(s, n, ids), 5);
+  const { n, cands } = buildNation(s, "parliament", 8);
+  const r = computeElection(s, n, election(s, n, cands.map((c) => c.id)), 5);
   assert.equal(sum(r.alloc), sum(n.regions.map((x) => x.power)));
   if (!r.coalition.minority) assert.ok(r.coalition.seats >= r.coalition.majority);
-  applyResult(s, n, r);
-  const coalitionParties = new Set(r.coalition.parties.map((p) => p.key));
-  const ministers = Object.values(n.cabinet).map((id) => s.persons[id]);
-  assert.ok(ministers.filter((m) => coalitionParties.has(m.partyId)).length >= ministers.length / 2);
 });
 
 test("results are reproducible from the seed", () => {
   const s = newState();
-  const n = generateNation(s, { gov: "democracy", seed: 3, regions: 6 });
-  const ids = eligibleCandidates(s, n, effectiveGov(n)).slice(0, 3).map((p) => p.id);
-  const e = election(s, n, ids);
+  const { n, cands } = buildNation(s, "democracy", 3);
+  const e = election(s, n, cands.map((c) => c.id));
   assert.deepEqual(computeElection(s, n, e, 99).national, computeElection(s, n, e, 99).national);
 });
 
-test("player ballots are counted in their region", () => {
+test("player ballots are counted in their county", () => {
   const { s, n, mine, labor, trade } = toyNation();
   n.settings.ballotWeight = 1000;
   const e = election(s, n, [labor.id, trade.id]);
   const base = computeElection(s, n, e, 1);
   e.ballots.Alex = { candidateId: trade.id, regionId: mine.id };
   const withBallot = computeElection(s, n, e, 1);
-  const a = base.regions.find((r) => r.id === mine.id).votes[1];
-  const b = withBallot.regions.find((r) => r.id === mine.id).votes[1];
-  assert.equal(b - a, 1000);
+  assert.equal(withBallot.regions.find((r) => r.id === mine.id).votes[1] - base.regions.find((r) => r.id === mine.id).votes[1], 1000);
 });

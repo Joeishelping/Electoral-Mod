@@ -4,6 +4,7 @@
 import { system, world } from "@minecraft/server";
 import { getState } from "./core/storage.js";
 import { openBoard } from "./ui/board.js";
+import { tick } from "./ui/ticker.js";
 
 const open = new Set();
 
@@ -42,15 +43,17 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
     return;
   }
   // From a command block / server console: open for the named player
-  const name = event.message.trim();
-  const target = world.getPlayers({ name })[0];
+  const target = world.getPlayers({ name: event.message.trim() })[0];
   if (target) openFor(target);
 });
 
 world.afterEvents.worldLoad.subscribe(() => {
-  try {
-    getState();
-  } catch (e) {
-    console.warn(`[Electoral] load failed: ${e}`);
-  }
+  getState();
+  system.runInterval(() => {
+    try {
+      tick();
+    } catch (e) {
+      console.warn(`[Electoral] tick failed: ${e}`);
+    }
+  }, 20);
 });
