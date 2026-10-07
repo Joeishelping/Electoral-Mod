@@ -1,4 +1,4 @@
-# Electoral Board Table
+# ElectoralV2
 
 A Minecraft Bedrock add-on for political roleplay servers. A **Board Table** block runs elections for as many nations as you like. You run the countries; the board runs the vote and then plays out a live **election night**, about 20 minutes of results streaming into chat with a scoreboard on everyone's screen.
 
@@ -6,7 +6,7 @@ Requires Minecraft Bedrock **1.21.90 or newer**. No Beta APIs needed.
 
 ## Install
 
-1. Open `ElectoralBoardTable.mcaddon` (build it with `python3 tools/package.py`), or put `packs/ElectoralBP` in `behavior_packs/` and `packs/ElectoralRP` in `resource_packs/` on your server.
+1. Open `ElectoralV2.mcaddon` (build it with `python3 tools/package.py`), or put `packs/ElectoralBP` in `behavior_packs/` and `packs/ElectoralRP` in `resource_packs/` on your server.
 2. Turn on both packs for the world.
 3. Get the **Board Table** from the creative menu (Items tab), or craft it: paper, book, paper / three planks / stick, empty, stick.
 4. Admins: operators, or `/tag <player> add electoral_admin`.
@@ -65,5 +65,5 @@ Votes then include random swings at the national, county and group level, plus t
 
 ```
 npm test                    # engine + election-night tests, and random clicking through every menu against mocked Minecraft APIs
-python3 tools/package.py    # builds dist/ElectoralBoardTable.mcaddon
+python3 tools/package.py    # builds dist/ElectoralV2.mcaddon
 ```

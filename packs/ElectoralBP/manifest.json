@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "header": {
-    "name": "Electoral Board Table (BP)",
+    "name": "ElectoralV2 (BP)",
     "description": "Board Table block: run AI-simulated elections for your roleplay nations, counted live county by county.",
     "uuid": "ac836087-aa93-4e7a-a298-6b8708d6b1e1",
     "version": [

@@ -1,4 +1,4 @@
-"""Builds dist/ElectoralBoardTable.mcaddon (plus the two .mcpack files).
+"""Builds dist/ElectoralV2.mcaddon (plus the two .mcpack files).
 
 Usage: python3 tools/package.py
 Double-click the .mcaddon on a device with Minecraft Bedrock to import both packs.
@@ -8,7 +8,7 @@ import os
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PACKS = {"ElectoralBP": "Electoral_BP.mcpack", "ElectoralRP": "Electoral_RP.mcpack"}
+PACKS = {"ElectoralBP": "ElectoralV2_BP.mcpack", "ElectoralRP": "ElectoralV2_RP.mcpack"}
 DIST = os.path.join(ROOT, "dist")
 
 
@@ -28,7 +28,7 @@ def main():
     for pack, out in PACKS.items():
         with zipfile.ZipFile(os.path.join(DIST, out), "w", zipfile.ZIP_DEFLATED) as zf:
             add_dir(zf, os.path.join(ROOT, "packs", pack), "")
-    addon = os.path.join(DIST, "ElectoralBoardTable.mcaddon")
+    addon = os.path.join(DIST, "ElectoralV2.mcaddon")
     with zipfile.ZipFile(addon, "w", zipfile.ZIP_DEFLATED) as zf:
         for pack in PACKS:
             add_dir(zf, os.path.join(ROOT, "packs", pack), pack)

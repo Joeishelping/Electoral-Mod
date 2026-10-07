@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "header": {
-    "name": "Electoral Board Table (RP)",
+    "name": "ElectoralV2 (RP)",
     "description": "Model, textures and names for the Board Table block.",
     "uuid": "617ac48b-39cc-4d80-9191-993aefef58b5",
     "version": [
