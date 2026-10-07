@@ -1,0 +1,16 @@
+{
+  "format_version": "1.20.10",
+  "minecraft:recipe_shaped": {
+    "description": { "identifier": "electoral:board_table" },
+    "tags": ["crafting_table"],
+    "pattern": ["MBM", "PPP", "S S"],
+    "key": {
+      "M": { "item": "minecraft:paper" },
+      "B": { "item": "minecraft:book" },
+      "P": { "tag": "minecraft:planks" },
+      "S": { "item": "minecraft:stick" }
+    },
+    "unlock": [{ "item": "minecraft:book" }],
+    "result": { "item": "electoral:board_table" }
+  }
+}

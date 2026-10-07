@@ -1,0 +1,11 @@
+{
+  "name": "electoral-board-table",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minecraft Bedrock add-on: Board Table block for nations, governments, diplomacy and AI-simulated elections.",
+  "scripts": {
+    "test": "node --import ./tests/loader.mjs --test tests/*.test.js",
+    "package": "python3 tools/package.py"
+  }
+}
