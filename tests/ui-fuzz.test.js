@@ -31,7 +31,7 @@ function makePlayer(rng, budget, admin = true) {
       for (const t of texts) if (typeof t === "string") assert.doesNotMatch(t, BAD, `form text: ${t.slice(0, 300)}`);
       seen.push(form._title);
       // time passes while the player clicks around
-      clock += rng.int(0, 120000);
+      clock += rng.int(0, 90000);
       tick(clock);
       if (budget-- <= 0) return null;
       if (rng.chance(0.03)) return null;
@@ -93,7 +93,7 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   assert.ok(forms > 2000, `explored ${forms} forms`);
   assert.ok(JSON.parse(_props.get("electoral:state:meta")).count >= 1);
   const chat = _messages.join("\n");
-  for (const must of ["Polls are closed", "reports (", "RESULT:"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
-  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County"]) assert.ok(titles.has(must), `reached screen: ${must}`);
+  for (const must of ["closed", "first returns", "RESULT"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
+  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term"]) assert.ok(titles.has(must), `reached screen: ${must}`);
   if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
 });

@@ -26,6 +26,7 @@ import { effectiveGov } from "../data/governments.js";
 import { getPerson, regionBlocShares } from "../core/state.js";
 import { clamp } from "../core/random.js";
 import { diplomacySummary } from "./diplomacy.js";
+import { TERM_EVENT_BY_ID } from "../data/events.js";
 
 export const ADULT_SHARE = 0.72;
 const DEFAULT_SALIENCE = 0.2;
@@ -64,10 +65,22 @@ export function buildContext(state, nation, candidateIds = []) {
   for (const c of candidates) for (const f of c.focus) agenda[f] = (agenda[f] || 0) + 1;
   for (const id of ISSUE_IDS) natSal[id] *= 1 + 0.12 * Math.min(agenda[id] || 0, 3);
 
+  // Issues of the current term (war, recession, scandal...).
+  const metrics = { ...nation.metrics };
+  let incumbentBonus = 0;
+  for (const id of nation.termEvents || []) {
+    const ev = TERM_EVENT_BY_ID[id];
+    if (!ev) continue;
+    for (const [issue, mul] of Object.entries(ev.salience)) natSal[issue] *= mul;
+    for (const [m, d] of Object.entries(ev.metrics)) metrics[m] = clamp((metrics[m] ?? 50) + d, 0, 100);
+    incumbentBonus += ev.incumbent;
+  }
+
   const leader = getPerson(state, nation.leaderId);
   const avgUnrest = nation.regions.length ? nation.regions.reduce((s, r) => s + (r.unrest || 0), 0) / nation.regions.length : 0;
   return {
-    state, nation, gov, candidates, dip, natSal,
+    state, nation, gov, candidates, dip, natSal, metrics, incumbentBonus,
+    day: null, // election-day modifiers, set by the election engine
     incumbentId: nation.leaderId,
     incumbentParty: leader ? leader.partyId : null,
     leaderTerms: nation.leaderTerms || 0,
@@ -120,7 +133,7 @@ export function buildGroups(ctx) {
 
 // Retrospective evaluation (-1.5..1.5) of the government's record for a mix of blocs.
 export function retroScore(ctx, region, blocMix) {
-  const m = ctx.nation.metrics;
+  const m = ctx.metrics || ctx.nation.metrics;
   let num = 0;
   let den = 0;
   for (const [blocId, w] of blocMix) {
@@ -209,7 +222,7 @@ export function utility(ctx, group, cand, detail = false) {
     W.valence *
     (((cand.popularity - 50) / 50) * 0.4 +
       ((cand.charisma - 50) / 50) * 0.3 * t.charisma +
-      ((cand.integrity - 50) / 50) * 0.25 * t.integrity) +
+      ((cand.integrity - 50) / 50) * 0.25 * t.integrity * (W.integrity ?? 1)) +
     ((cand.competence - 50) / 50) * 0.3 * t.competence * W.competence +
     ((cand.funds - 50) / 50) * 0.2 * t.wealth * W.money;
 
@@ -230,7 +243,7 @@ export function utility(ctx, group, cand, detail = false) {
   // Record in office.
   let record = 0;
   if (cand.id === ctx.incumbentId) {
-    record += group.retro * 1.2 * W.retro + 0.12 - 0.08 * ctx.leaderTerms;
+    record += group.retro * 1.2 * W.retro + 0.12 - 0.08 * ctx.leaderTerms + ctx.incumbentBonus;
     if (ctx.dip.wars > 0) record += 0.15; // rally round the flag
   } else if (ctx.incumbentParty && cand.partyId === ctx.incumbentParty) {
     record += group.retro * 0.6 * W.retro;
@@ -239,13 +252,21 @@ export function utility(ctx, group, cand, detail = false) {
   // Partisan loyalty and learned habits.
   let loyalty = 0;
   if (cand.partyId && group.region) {
-    loyalty += (group.region.lean[cand.partyId] || 0) * 0.6 * group.loyalty * W.party;
+    loyalty += (group.region.lean[cand.partyId] || 0) * 0.9 * group.loyalty * W.party;
     loyalty += (group.memory[cand.partyId] || 0) * group.loyalty * W.party;
   }
 
   // Clan loyalty: in clan/royal councils a region strongly backs its own.
   let kin = 0;
   if (W.kin && group.region && cand.homeRegion === group.region.id) kin += 0.5 * W.kin;
+
+  // Election-day swings (late scandals, endorsements, ground games, debates).
+  const day = ctx.day;
+  if (day) {
+    kin += day.nat[cand.id] || 0;
+    if (group.blocId) kin += day.bloc[`${cand.id}:${group.blocId}`] || 0;
+    if (group.region) kin += day.region[`${cand.id}:${group.region.id}`] || 0;
+  }
 
   const total = loss + emphasis + valence + local + courting + record + loyalty + kin;
   if (!detail) return total;
@@ -284,5 +305,9 @@ export function turnoutFor(ctx, group, utils, rng) {
   if (group.region) t += 0.04 * ((group.region.urban ?? 0.5) - 0.5);
   if (max < -1.2) t *= 0.85; // alienation
   t += rng.normal(0, 0.03 * (group.volatility || 1));
+  if (ctx.day) {
+    if (group.region) t *= ctx.day.turnoutRegion[group.region.id] || 1;
+    if (group.blocId) t *= ctx.day.turnoutBloc[group.blocId] || 1;
+  }
   return clamp(t, 0.05, 0.97);
 }

@@ -30,7 +30,8 @@ export function createNation(state, { name, gov = "democracy", color = "§9" }) 
     leaderId: null, // the candidate currently in office (for performance voting)
     leaderTerms: 0,
     election: null, // open election, taking ballots
-    count: null, // live count in progress
+    count: null, // election night in progress
+    termEvents: [], // issues of the current term (war, recession...)
     history: [],
     electionCount: 0,
     approval: null,
@@ -159,11 +160,15 @@ export function normalizeState(state) {
     for (const k of ["settings", "salience"]) nation[k] = nation[k] || {};
     for (const k of ["regions", "parties", "history"]) nation[k] = nation[k] || [];
     nation.count = nation.count || null;
+    nation.termEvents = nation.termEvents || [];
+    if (!["democracy", "parliament", "singleparty", "monarchy", "clan", "theocracy", "junta", "guild"].includes(nation.gov)) nation.gov = "democracy";
+    if (nation.count && !nation.count.timeline) nation.count = null; // a count from an older version
     for (const k of ["cabinet", "cabinetPins", "deputyId", "heirId", "dynasty", "log"]) delete nation[k];
     for (const region of nation.regions) {
       region.issueMods = region.issueMods || {};
       region.lean = region.lean || {};
       region.memory = region.memory || {};
+      region.history = region.history || [];
       region.unrest = clamp(region.unrest || 0, 0, 100);
     }
   }

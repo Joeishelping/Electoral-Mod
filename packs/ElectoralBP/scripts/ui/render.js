@@ -6,6 +6,8 @@ import { METRICS, gradeMetric } from "../data/metrics.js";
 import { effectiveGov, METHODS } from "../data/governments.js";
 import { displayName, getParty, getPerson, personLabel, regionBlocShares } from "../core/state.js";
 import { issuePriorities, regionIdeal } from "../engine/apply.js";
+import { countyPattern } from "../engine/generate.js";
+import { TERM_EVENT_BY_ID } from "../data/events.js";
 import { bar, fmt, pct } from "./forms.js";
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
@@ -17,7 +19,7 @@ export function timeLeft(ms) {
 }
 
 export function statusLine(state, nation) {
-  if (nation.count) return `§6Counting: ${nation.count.result.title}`;
+  if (nation.count) return `§6Election night: ${nation.count.result.title} (${Math.ceil(Math.max(0, nation.count.durationMs - (Date.now() - nation.count.startedAt)) / 60000)} min left)`;
   const e = nation.election;
   if (!e) return "";
   const left = e.closesAt ? ` · ${timeLeft(e.closesAt - Date.now())}` : "";
@@ -26,9 +28,10 @@ export function statusLine(state, nation) {
 
 export function nationSummary(state, nation) {
   const gov = effectiveGov(nation);
-  const lines = [`${nation.color}§l${nation.name}§r`, `§7Style: §f${gov.name}§7 - ${gov.description}`];
+  const lines = [`${nation.color}§l${nation.name}§r`, `§7Style: §f${gov.name}§7 - ${gov.tagline}`];
   lines.push(`§7In office (${gov.leaderTitle}): §f${nation.leaderId ? personLabel(state, nation, nation.leaderId) : "nobody yet"}`);
   lines.push(`§7Counties: §f${nation.regions.length}§7 · Candidates: §f${Object.values(state.persons).filter((p) => p.nationId === nation.id).length}`);
+  if ((nation.termEvents || []).length) lines.push(`§7This term: §c${nation.termEvents.map((id) => TERM_EVENT_BY_ID[id]?.name).filter(Boolean).join(", ")}`);
   const status = statusLine(state, nation);
   if (status) {
     lines.push("", status);
@@ -84,6 +87,8 @@ export function regionProfile(state, nation, region) {
     `§l${region.name}§r §7(${REGION_TEMPLATES.find((t) => t.id === region.template)?.name || "Custom"})`,
     `§7Population §f${fmt(region.population)}§7 · Voting power §f${region.power}${region.autoPower === false ? " (manual)" : ""}`,
     "",
+    `§6Pattern: §f${countyPattern(nation, region)}`,
+    `§6Past winners: ${(region.history || []).length ? region.history.slice(0, 6).map((h) => `${h.color}${h.party || h.name}§7 (+${h.margin}%)`).join("§7, ") : "§7none yet"}`,
     "§6Who lives here: §f" + Object.entries(shares).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([b, s]) => `${BLOC_BY_ID[b].name} ${pct(s, 0)}`).join(", "),
     "§6Cares most about: §f" + pri.map((p) => ISSUE_BY_ID[p.id].name).join(", "),
     "§6Leans toward: §f" + (lean.map((id) => stanceText(id, ideal[id])).join(", ") || "the middle"),

@@ -64,6 +64,30 @@ export function applyResult(state, nation, result) {
     const rr = result.regions.find((x) => x.id === region.id);
     region.unrest = clamp(Math.round((region.unrest || 0) * 0.8 + (rr?.unrestDelta || 0)), 0, 100);
   }
+  // County history: who each county backed, and its long-run party lean drifts
+  // toward the parties it keeps voting for (that's how strongholds form).
+  for (const region of nation.regions) {
+    const rr = result.regions.find((x) => x.id === region.id);
+    if (!rr || !(rr.cast > 0)) continue;
+    const votes = result.official ? result.official.regions[region.id] || rr.votes : rr.votes;
+    const total = votes.reduce((a, b) => a + b, 0) || 1;
+    const order = votes.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+    const w = result.candidates[order[0][1]];
+    region.history = region.history || [];
+    region.history.unshift({ no: result.no, name: w.name, party: w.partyName || "", color: w.color, partyId: w.partyId || null, margin: Math.round(((order[0][0] - (order[1]?.[0] || 0)) / total) * 1000) / 10 });
+    if (region.history.length > 8) region.history.length = 8;
+    if (result.kind === "popular") {
+      const parties = [...new Set(result.candidates.map((c) => c.partyId).filter(Boolean))];
+      for (const pid of parties) {
+        const share = votes.reduce((s2, v, i) => s2 + (result.candidates[i].partyId === pid ? v : 0), 0) / total;
+        region.lean[pid] = clamp(Math.round(((region.lean[pid] || 0) * 0.85 + (share - 1 / parties.length) * 0.6) * 100) / 100, -1, 1);
+      }
+    }
+  }
+  // A new term begins: the old term's events are now history.
+  result.termEvents = (nation.termEvents || []).slice();
+  nation.termEvents = [];
+
   if (result.winnerId) {
     const winner = getPerson(state, result.winnerId);
     if (result.winnerId === nation.leaderId) nation.leaderTerms = (nation.leaderTerms || 0) + 1;

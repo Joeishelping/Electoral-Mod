@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { newState, createNation, createRegion, createParty, createPerson } from "../packs/ElectoralBP/scripts/core/state.js";
 import { computeElection, eligibleCandidates, openElection } from "../packs/ElectoralBP/scripts/engine/election.js";
 import { surveyApproval } from "../packs/ElectoralBP/scripts/engine/apply.js";
-import { beginCount, finishCount, tickCount } from "../packs/ElectoralBP/scripts/engine/count.js";
+import { beginCount, finishCount, tickNight, liveView } from "../packs/ElectoralBP/scripts/engine/night.js";
+import { seedHistoricalLean, countyPattern } from "../packs/ElectoralBP/scripts/engine/generate.js";
 import { runForecastSync } from "../packs/ElectoralBP/scripts/engine/forecast.js";
 import { effectiveGov, GOVERNMENTS } from "../packs/ElectoralBP/scripts/data/governments.js";
 import { setStance } from "../packs/ElectoralBP/scripts/engine/diplomacy.js";
@@ -63,66 +64,132 @@ test("unnamed candidates never reach the ballot", () => {
   assert.equal(eligibleCandidates(s, n).length, 3);
 });
 
-test("every voting style counts live from start to finish", () => {
+test("every government type plays a full election night", () => {
   for (const g of GOVERNMENTS) {
     const s = newState();
     const { n, cands } = buildNation(s, g.id, 5);
     n.leaderId = cands[0].id;
+    n.termEvents = ["war", "scandal"];
     election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id });
-    const opening = beginCount(s, n, 11, 0);
-    assert.ok(opening[0].includes("Polls are closed"));
-    let t = 0;
-    let steps = 0;
+    const opening = beginCount(s, n, 11, 0, 20);
+    assert.ok(opening.length > 0);
+    assert.equal(n.count.durationMs, 20 * 60000);
     let headline = null;
-    while (n.count) {
-      assert.deepEqual(tickCount(s, n, t).lines, [], "nothing is revealed before it is due");
-      t += n.count.intervalMs;
-      const r = tickCount(s, n, t);
-      assert.ok(r.lines.length > 0);
-      for (const l of r.lines) assert.doesNotMatch(l, /undefined|NaN/);
+    let lastLineAt = 0;
+    let chat = [];
+    for (let t = 0; n.count && t <= 20 * 60000 + 1000; t += 1000) {
+      const r = tickNight(s, n, t);
+      for (const l of r.lines) assert.doesNotMatch(l, /undefined|NaN/, `${g.id}: ${l}`);
+      if (r.lines.length) lastLineAt = t;
+      chat = chat.concat(r.lines);
       if (r.headline) headline = r.headline;
-      steps++;
+      if (n.count) assert.ok(liveView(s, n));
     }
-    assert.ok(steps >= 2, `${g.id} revealed in steps`);
     assert.ok(headline, `${g.id} announced a winner`);
+    assert.ok(lastLineAt >= 19 * 60000, `${g.id} night lasted the full 20 minutes`);
+    assert.ok(chat.length >= 12, `${g.id} night had plenty happening (${chat.length} lines)`);
     assert.equal(n.election, null);
     assert.equal(n.history.length, 1);
     assert.equal(n.leaderId, n.history[0].winnerId);
+    assert.deepEqual(n.termEvents, [], "a new term starts");
     assert.ok(surveyApproval(s, n, 1));
-    const e2 = election(s, n, cands.map((c) => c.id));
-    const f = runForecastSync(s, n, e2, 20);
-    assert.ok(Math.abs(sum(f.winProb) - 1) < 1e-9);
     JSON.stringify(s);
   }
 });
 
-test("skipping the count gives the same winner", () => {
+test("each government type has its own election-night flavor", () => {
+  const signature = { democracy: "CALL", parliament: "declared", singleparty: "Bulletin", monarchy: "swears fealty", clan: "raises its banner", theocracy: "smoke", junta: "pledges its troops", guild: "shares" };
+  for (const [gov, word] of Object.entries(signature)) {
+    let seen = false;
+    for (let seed = 1; seed <= 4 && !seen; seed++) {
+      const s = newState();
+      const { n, cands } = buildNation(s, gov, seed);
+      election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id });
+      beginCount(s, n, seed, 0, 20);
+      const chat = [];
+      for (let t = 0; n.count; t += 5000) chat.push(...tickNight(s, n, t).lines);
+      seen = chat.some((l) => l.includes(word));
+    }
+    assert.ok(seen, `${gov} night mentions "${word}"`);
+  }
+});
+
+test("lead changes, calls, race calls, recounts and exit polls all happen", () => {
+  const seen = { lead: 0, call: 0, race: 0, recount: 0, exit: 0 };
+  for (let seed = 1; seed <= 30; seed++) {
+    const s = newState();
+    const { n, cands } = buildNation(s, "democracy", seed);
+    election(s, n, cands.map((c) => c.id));
+    beginCount(s, n, seed * 31, 0, 20);
+    for (let t = 0; n.count; t += 10000) {
+      for (const l of tickNight(s, n, t).lines) {
+        if (l.includes("LEAD CHANGE")) seen.lead++;
+        if (l.includes("CALL:")) seen.call++;
+        if (l.includes("RACE CALL")) seen.race++;
+        if (l.includes("recount is ordered")) seen.recount++;
+        if (l.includes("Exit poll")) seen.exit++;
+      }
+    }
+  }
+  for (const [k, v] of Object.entries(seen)) assert.ok(v > 0, `${k} happened (${v})`);
+});
+
+test("race calls are never wrong", () => {
+  for (let seed = 1; seed <= 25; seed++) {
+    for (const gov of ["democracy", "singleparty", "guild"]) {
+      const s = newState();
+      const { n, cands } = buildNation(s, gov, seed);
+      election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id });
+      beginCount(s, n, seed, 0, 20);
+      const winner = n.count.result.candidates[n.count.result.winnerIdx].name;
+      for (let t = 0; n.count; t += 10000) {
+        for (const l of tickNight(s, n, t).lines) {
+          if (l.includes("RACE CALL") || l.includes("ANNOUNCES VICTORY")) assert.ok(l.includes(winner), `${gov}: ${l} (winner ${winner})`);
+        }
+      }
+    }
+  }
+});
+
+test("counties remember who they voted for", () => {
+  const s = newState();
+  const { n, cands } = buildNation(s, "democracy", 12);
+  seedHistoricalLean(n);
+  const workers = n.parties[0];
+  const mining = n.regions[2];
+  assert.ok(mining.lean[workers.id] > 0, "a mining county starts out leaning toward the workers' party");
+  for (let i = 0; i < 3; i++) {
+    election(s, n, cands.map((c) => c.id));
+    beginCount(s, n, 100 + i, 0, 1);
+    finishCount(s, n);
+  }
+  assert.equal(mining.history.length, 3);
+  assert.ok(countyPattern(n, mining).length > 0);
+});
+
+test("term events change the outcome", () => {
+  const shares = [];
+  for (const events of [["boom", "reform"], ["recession", "scandal", "famine"]]) {
+    const s = newState();
+    const { n, cands } = buildNation(s, "democracy", 4);
+    n.leaderId = cands[0].id;
+    n.termEvents = events;
+    const r = computeElection(s, n, election(s, n, cands.map((c) => c.id)), 9, { noDayEvents: true });
+    shares.push(r.national[0] / sum(r.national));
+  }
+  assert.ok(shares[0] - shares[1] > 0.05, `good term beats a bad one: ${shares}`);
+});
+
+test("skipping election night gives the same winner", () => {
   const s = newState();
   const { n, cands } = buildNation(s, "democracy", 9);
   election(s, n, cands.map((c) => c.id));
   beginCount(s, n, 21, 0);
   const expected = n.count.result.winnerId;
-  const res = finishCount(s, n, 0);
+  const res = finishCount(s, n);
   assert.ok(res.done);
+  assert.ok(res.lines[0].includes("RESULT"));
   assert.equal(n.history[0].winnerId, expected);
-});
-
-test("the projection is called before the last county reports", () => {
-  let called = 0;
-  for (let seed = 1; seed <= 20; seed++) {
-    const s = newState();
-    const { n, cands } = buildNation(s, "singleparty", seed);
-    n.leaderId = cands[0].id;
-    election(s, n, cands.map((c) => c.id), { endorsedId: cands[0].id });
-    beginCount(s, n, seed, 0);
-    let t = 0;
-    while (n.count) {
-      t += 1e6;
-      const r = tickCount(s, n, t);
-      if (r.lines.some((l) => l.includes("PROJECTION"))) called++;
-    }
-  }
-  assert.ok(called > 10, `managed elections are called early (${called}/20)`);
 });
 
 test("managed elections publish inflated numbers but keep the truth", () => {

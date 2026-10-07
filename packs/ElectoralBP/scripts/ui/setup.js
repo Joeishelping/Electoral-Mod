@@ -7,7 +7,8 @@ import { GOVERNMENTS, GOV_BY_ID, METHODS, effectiveGov } from "../data/governmen
 import { COLORS, COLOR_NAMES } from "../data/names.js";
 import { createParty, createPerson, deleteNation, deletePerson, displayName, nationPersons, personLabel } from "../core/state.js";
 import { clamp, createRng } from "../core/random.js";
-import { addRegionOfType, autoApportion } from "../engine/generate.js";
+import { addRegionOfType, autoApportion, seedHistoricalLean } from "../engine/generate.js";
+import { TERM_EVENTS } from "../data/events.js";
 import { confirm, fmt, modal, notice } from "./forms.js";
 import { CLOSE, commit, loop, S } from "./nav.js";
 import { metricsPage, personCard, regionProfile, stanceText } from "./render.js";
@@ -283,6 +284,7 @@ async function editParty(player, nation, party, title) {
   if (!r) return false;
   if (r.name.trim()) party.name = r.name.trim();
   party.color = COLORS[r.color];
+  seedHistoricalLean(nation);
   commit();
   return !!party.name;
 }
@@ -310,7 +312,16 @@ export function partiesMenu(player, nation) {
           body: `${p.color}§l${p.name}§r\n§7Platform: §f${ISSUES.filter((i) => Math.abs(p.positions[i.id]) >= 30).map((i) => stanceText(i.id, p.positions[i.id])).join(", ") || "not set"}\n§7New candidates in this party start from its platform.`,
           options: [
             { text: "Name & Color", run: () => editParty(player, nation, p, "Party") },
-            { text: "§7Platform (advanced)", run: () => stanceSliders(player, `Platform: ${p.name}`, p.positions) },
+            {
+              text: "Platform",
+              run: async () => {
+                if (!(await stanceSliders(player, `Platform: ${p.name}`, p.positions))) return;
+                // a new platform reshapes which counties are this party's natural base
+                for (const reg of nation.regions) if (!(reg.history || []).length) delete reg.lean[p.id];
+                seedHistoricalLean(nation);
+                commit();
+              },
+            },
             {
               text: "§cDelete Party",
               run: async () => {
@@ -392,7 +403,7 @@ async function rules(player, nation) {
     { key: "consensus", type: "slider", label: "Council agreement needed % (council styles)", min: 50, max: 100, step: 1, value: Math.round(gov.consensus * 100) },
     { key: "threshold", type: "slider", label: "Minimum % for a party to win seats (Parliament)", min: 0, max: 20, value: Math.round(gov.threshold * 100) },
     { key: "ballot", type: "slider", label: "How many votes one player ballot is worth", min: 1, max: 500, value: gov.ballotWeight },
-    { key: "reveal", type: "slider", label: "Seconds between county results on election night", min: 2, max: 60, value: gov.revealSeconds },
+    { key: "night", type: "slider", label: "Default length of election night (minutes)", min: 1, max: 60, value: gov.nightMinutes },
   ]);
   if (!r) return;
   const s = nation.settings;
@@ -407,7 +418,7 @@ async function rules(player, nation) {
   set("consensus", r.consensus / 100, base.consensus);
   set("threshold", r.threshold / 100, base.threshold ?? 0.05);
   s.ballotWeight = r.ballot;
-  s.revealSeconds = r.reveal;
+  s.nightMinutes = r.night;
   commit();
 }
 
@@ -422,7 +433,7 @@ export function settingsMenu(player, nation) {
           const r = await modal(player, "Nation", [
             { key: "name", type: "text", label: "Nation name", value: nation.name },
             { key: "color", type: "dropdown", label: "Color", options: colorOptions(), value: Math.max(0, COLORS.indexOf(nation.color)) },
-            { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.description}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name), value: Math.max(0, GOVERNMENTS.findIndex((g) => g.id === nation.gov)) },
+            { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.tagline}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name), value: Math.max(0, GOVERNMENTS.findIndex((g) => g.id === nation.gov)) },
           ]);
           if (!r) return;
           nation.name = r.name.trim() || nation.name;
@@ -430,7 +441,7 @@ export function settingsMenu(player, nation) {
           const gov = GOVERNMENTS[r.gov].id;
           if (gov !== nation.gov) {
             nation.gov = gov;
-            nation.settings = { totalSeats: nation.settings.totalSeats, ballotWeight: nation.settings.ballotWeight, revealSeconds: nation.settings.revealSeconds };
+            nation.settings = { totalSeats: nation.settings.totalSeats, ballotWeight: nation.settings.ballotWeight, nightMinutes: nation.settings.nightMinutes };
             if (nation.election && !nation.count) nation.election = null;
           }
           commit();
@@ -451,3 +462,28 @@ export function settingsMenu(player, nation) {
 }
 
 export { colorOptions };
+
+// ---------- issues of the term ----------
+
+export function termMenu(player, nation) {
+  return loop(player, () => {
+    const on = new Set(nation.termEvents || []);
+    const lines = ["§7What happened during this term? These change what voters care about and how they judge whoever is in office. They reset when a new term starts (after an election).", ""];
+    lines.push(on.size ? TERM_EVENTS.filter((e) => on.has(e.id)).map((e) => `§c* ${e.name}§7 - ${e.desc}`).join("\n") : "§7Nothing major has happened.");
+    return {
+      title: "Issues of the Term",
+      body: lines.join("\n"),
+      options: [
+        {
+          text: "Choose What Happened",
+          run: async () => {
+            const r = await modal(player, "Issues of the Term", TERM_EVENTS.map((e) => ({ key: e.id, type: "toggle", label: `§e${e.name}§r §7- ${e.desc}`, value: on.has(e.id) })));
+            if (!r) return;
+            nation.termEvents = TERM_EVENTS.filter((e) => r[e.id]).map((e) => e.id);
+            commit();
+          },
+        },
+      ],
+    };
+  });
+}

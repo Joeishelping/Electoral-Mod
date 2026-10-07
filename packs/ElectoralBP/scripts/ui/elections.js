@@ -9,7 +9,7 @@ import { hashSeed } from "../core/random.js";
 import { eligibleCandidates, openElection } from "../engine/election.js";
 import { issuePriorities, surveyApproval } from "../engine/apply.js";
 import { forecastJob } from "../engine/forecast.js";
-import { beginCount, finishCount } from "../engine/count.js";
+import { beginCount, finishCount, liveView } from "../engine/night.js";
 import { bar, confirm, modal, notice, pct } from "./forms.js";
 import { announce, commit, isAdmin, loop, page, S } from "./nav.js";
 import { blocsPage, regionButton, regionDetail, resultSummary, roundsPage, timeLeft } from "./render.js";
@@ -181,7 +181,7 @@ async function startElection(player, nation) {
   const methods = gov.selection === "council" ? [] : gov.methods;
   const fields = [
     { key: "title", type: "text", label: "Election name", value: `${gov.leaderTitle} Election ${nation.electionCount + 1}` },
-    { key: "minutes", type: "slider", label: "How long voting stays open, in minutes (0 = until you close it)", min: 0, max: 180, step: 5, value: 30 },
+    { key: "minutes", type: "slider", label: "How long voting stays open, in minutes (0 = until you close it). When it closes, election night starts automatically.", min: 0, max: 180, step: 5, value: 30 },
   ];
   if (methods.length > 1) fields.push({ key: "method", type: "dropdown", label: "How votes are counted", options: methods.map((m) => `${METHODS[m].name} - ${METHODS[m].desc}`), value: Math.max(0, methods.indexOf(gov.method)) });
   if (gov.integrity < 0.999) {
@@ -208,11 +208,38 @@ async function startElection(player, nation) {
 
 export async function closePolls(player, nation) {
   if (!nation.election || nation.count) return;
-  if (!(await confirm(player, "Close the Polls", `Close voting for §e${nation.election.title}§r and start the count? Results will come in county by county.`, "§aStart the Count"))) return;
-  if (!nation.election || nation.count) return;
-  const lines = beginCount(S(), nation, hashSeed(nation.id, nation.election.id, Date.now(), Math.random()), Date.now());
+  const gov = effectiveGov(nation);
+  const r = await modal(player, "Close the Polls", [
+    { key: "min", type: "slider", label: `Close voting for §e${nation.election.title}§r and start election night.\n\nHow long should the night last? (minutes)`, min: 1, max: 60, value: gov.nightMinutes },
+  ], "Close Polls");
+  if (!r || !nation.election || nation.count) return;
+  const lines = beginCount(S(), nation, hashSeed(nation.id, nation.election.id, Date.now(), Math.random()), Date.now(), r.min);
   commit();
   lines.forEach(announce);
+}
+
+export function liveResults(player, nation) {
+  return loop(player, () => {
+    const state = S();
+    const view = liveView(state, nation);
+    if (!view) return null;
+    const count = nation.count;
+    const result = count.result;
+    const gov = effectiveGov(nation);
+    const lines = [`§l${result.title}§r §7- ${Math.ceil(view.leftMs / 60000)} min of the night left`, ""];
+    for (const row of view.rows) lines.push(`${row.color}${row.name}§r  §f${row.score}${row.unit === "%" ? "%" : ` ${row.unit.toLowerCase()}`}`);
+    if (view.countedFrac !== null) lines.push(`§7${bar(view.countedFrac, 24, "§b")} ${pct(view.countedFrac, 0)} ${gov.words.report}`);
+    if (view.regions) {
+      lines.push("", `§6${gov.words.counties[0].toUpperCase()}${gov.words.counties.slice(1)}`);
+      for (const r of view.regions) {
+        const c = r.lead >= 0 ? result.candidates[r.lead] : null;
+        const status = r.recount ? "§cRECOUNT" : r.called !== null ? `${result.candidates[r.called].color}CALLED ${result.candidates[r.called].name}` : r.frac === 0 ? "§8no returns yet" : `${c.color}${c.name} +${pct(r.margin, 1)}`;
+        lines.push(` §f${r.name}§r ${bar(r.frac, 10, "§b")} §7${pct(r.frac, 0)}§r ${status}`);
+      }
+    }
+    lines.push("", "§6Latest", ...count.log.slice(-8).map((l) => ` ${l.replace(/^.*?\]§r /, "")}`));
+    return { title: "Live Results", body: lines.join("\n"), options: [{ text: "§bRefresh", run: () => {} }] };
+  });
 }
 
 export function electionControl(player, nation) {
@@ -223,7 +250,7 @@ export function electionControl(player, nation) {
     const lines = [];
     if (nation.count) {
       const c = nation.count;
-      lines.push(`§6Counting ${c.result.title}§r - step ${c.step} of ${c.steps.length}.`, `§7A new result comes in every ${Math.round(c.intervalMs / 1000)}s. Watch chat!`);
+      lines.push(`§6Election night: ${c.result.title}§r`, `§7${Math.ceil(Math.max(0, c.durationMs - (Date.now() - c.startedAt)) / 60000)} minutes left. Results are coming in live in chat.`);
     } else if (e) {
       lines.push(`§a${e.title}§r is open §7(${e.kind === "council" ? "council vote" : METHODS[e.method]?.name})`);
       lines.push(`§7${e.closesAt ? `Polls close automatically: ${timeLeft(e.closesAt - Date.now())}` : "Polls stay open until you close them."}`);
@@ -237,7 +264,7 @@ export function electionControl(player, nation) {
       options: [
         !e && { text: "§2Start an Election", icon: "textures/items/paper", run: () => startElection(player, nation) },
         e && !nation.count && { text: "Run a Poll", icon: "textures/items/compass_item", run: () => pollMenu(player, nation) },
-        e && !nation.count && { text: "§2Close the Polls & Count", icon: "textures/items/book_written", run: () => closePolls(player, nation) },
+        e && !nation.count && { text: "§2Close the Polls - Start Election Night", icon: "textures/items/book_written", run: () => closePolls(player, nation) },
         e && !nation.count && {
           text: "Edit Candidates",
           run: async () => {
@@ -258,10 +285,12 @@ export function electionControl(player, nation) {
             commit();
           },
         },
+        nation.count && { text: "§bLive Results", icon: "textures/items/compass_item", run: () => liveResults(player, nation) },
         nation.count && {
           text: "Skip to the Final Result",
           run: () => {
-            const res = finishCount(S(), nation, Date.now());
+            if (!nation.count) return;
+            const res = finishCount(S(), nation);
             commit();
             res.lines.forEach(announce);
           },

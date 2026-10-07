@@ -5,7 +5,26 @@ export const _messages = [];
 export const _hooks = { startup: [], scriptEvent: [], worldLoad: [], interval: [] };
 export const _players = [];
 
+export const DisplaySlotId = { Sidebar: "sidebar", List: "list", BelowName: "belowname" };
+export const ObjectiveSortOrder = { Ascending: 0, Descending: 1 };
+const objectives = new Map();
+export const _sidebar = { objective: null };
+const scoreboard = {
+  getObjective: (id) => objectives.get(id),
+  addObjective: (id, name) => {
+    if (objectives.has(id)) throw new Error(`objective ${id} exists`);
+    if (typeof name !== "string" || name.length > 32) throw new Error(`bad objective name: ${name}`);
+    const scores = new Map();
+    const obj = { id, displayName: name, scores, setScore: (p, v) => { if (!Number.isInteger(v)) throw new Error(`score must be int: ${v}`); scores.set(p, v); } };
+    objectives.set(id, obj);
+    return obj;
+  },
+  removeObjective: (id) => objectives.delete(id),
+  setObjectiveAtDisplaySlot: (slot, { objective }) => { _sidebar.objective = objective; },
+};
+
 export const world = {
+  scoreboard,
   getDynamicProperty: (k) => props.get(k),
   setDynamicProperty: (k, v) => {
     if (v === undefined) props.delete(k);

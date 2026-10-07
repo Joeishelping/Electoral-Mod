@@ -9,6 +9,7 @@ import { displayName, getParty, getPerson, getRegion, nationPersons, nextId } fr
 import { createRng, clamp, softmax } from "../core/random.js";
 import { buildContext, buildGroups, utility, turnoutFor, FACTOR_LABELS } from "./model.js";
 import { computeCouncil } from "./council.js";
+import { rollDayEvents } from "../data/events.js";
 
 // ---------- setup ----------
 
@@ -438,11 +439,27 @@ export function candidateSummary(state, nation, ids) {
   });
 }
 
+function dayMods(events, cands) {
+  const day = { nat: {}, bloc: {}, region: {}, turnoutRegion: {}, turnoutBloc: {} };
+  for (const e of events) {
+    const id = e.cand !== undefined ? cands[e.cand].id : null;
+    if (e.type === "scandal" || e.type === "debate") day.nat[id] = (day.nat[id] || 0) + e.swing;
+    else if (e.type === "endorse") day.bloc[`${id}:${e.blocId}`] = e.swing;
+    else if (e.type === "ground") day.region[`${id}:${e.regionId}`] = e.swing;
+    else if (e.regionId) day.turnoutRegion[e.regionId] = (day.turnoutRegion[e.regionId] || 1) * e.turnout;
+    else if (e.blocId) day.turnoutBloc[e.blocId] = e.turnout;
+  }
+  return day;
+}
+
 export function computeElection(state, nation, election, seed, opts = {}) {
   if (election.kind === "council") return computeCouncil(state, nation, election, seed, opts);
   const rng = createRng(seed);
   const ctx = buildContext(state, nation, election.candidates);
   const gov = ctx.gov;
+  const blocNames = Object.fromEntries(Object.values(BLOC_BY_ID).map((b) => [b.id, b.name]));
+  const dayEvents = opts.noDayEvents ? [] : rollDayEvents(rng, nation, ctx.candidates, blocNames);
+  ctx.day = dayMods(dayEvents, ctx.candidates);
   const method = COUNTERS[election.method] ? election.method : gov.method;
   const groups = simulateGroups(ctx, rng);
   const ballots = playerBallots(state, nation, election, ctx, gov);
@@ -490,6 +507,7 @@ export function computeElection(state, nation, election, seed, opts = {}) {
     winnerIdx: counted.winner,
     trueWinnerIdx: counted.winner,
     playerBallots: ballots.length,
+    dayEvents: dayEvents.map((e) => ({ type: e.type, text: e.text, regionId: e.regionId || null })),
   };
   result.cast = sum(result.regions.map((r) => r.cast));
   result.eligible = sum(result.regions.map((r) => r.eligible));

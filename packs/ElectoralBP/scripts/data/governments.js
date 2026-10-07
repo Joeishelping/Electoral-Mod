@@ -1,87 +1,90 @@
-// Government styles. These only decide HOW a vote works (who votes, how it is
-// counted, how honest the count is). What happens after the vote is up to the
-// roleplayers running the nation.
+// Government types. Each one votes differently AND plays out differently on
+// election night (see engine/night.js). What happens after the vote is up to
+// the roleplayers running the nation.
+//
+//   night: "count"   counties report partial results live (Democracy, Guild)
+//          "seats"   counties fill assembly seats, then coalition talks (Parliament)
+//          "bulletin" official bulletins arrive fast; the true count is hidden (Single-Party)
+//          "council" electors declare one by one over ballot rounds (Royal, Clan, Conclave, Junta)
 
 export const METHODS = {
-  electoral: { name: "Regional Electors", desc: "Each region gives all its voting power to its winner. Most electors wins." },
+  electoral: { name: "Regional Electors", desc: "Each county gives all its electors to its winner. A majority of electors wins." },
   plurality: { name: "Popular Vote", desc: "Most votes nationwide wins." },
-  runoff: { name: "Two-Round Runoff", desc: "If nobody gets over 50%, the top two face a second round." },
-  ranked: { name: "Ranked Choice", desc: "Last place drops out and their voters move to their next choice, until someone has 50%." },
-  proportional: { name: "Proportional Seats", desc: "Seats are split by party vote; parties form a majority coalition." },
+  runoff: { name: "Two-Round Runoff", desc: "If nobody gets over 50%, the top two go to a second round." },
+  ranked: { name: "Ranked Choice", desc: "Last place drops out and their voters move to their next choice until someone has 50%." },
+  proportional: { name: "Proportional Seats", desc: "Each county's seats are split by party vote; parties form a majority coalition." },
 };
 
-const W = { policy: 1, valence: 1, retro: 1, group: 1, party: 1, competence: 1, money: 0.5, kin: 0 };
+const W = { policy: 1, valence: 1, retro: 1, group: 1, party: 1, competence: 1, money: 0.5, kin: 0, integrity: 1 };
 
 export const GOVERNMENTS = [
   {
-    id: "democracy", name: "Democracy", leaderTitle: "President",
-    description: "Everyone votes. Regions award electors to their winner.",
+    id: "democracy", name: "Democracy", leaderTitle: "President", night: "count",
+    tagline: "Counties award electors. Results come in live, races get called, close counties get recounted.",
     selection: "popular", method: "electoral", methods: ["electoral", "plurality", "runoff", "ranked"],
-    multiParty: true, integrity: 1, compulsory: 0, protection: 0, electorate: null, wealthWeighted: false, consensus: 0.5,
+    multiParty: true, integrity: 1, compulsory: 0, protection: 0, electorate: null, wealthWeighted: false,
     weights: { ...W },
+    words: { report: "counted", unit: "votes", county: "County", counties: "counties" },
   },
   {
-    id: "parliament", name: "Parliament", leaderTitle: "Premier",
-    description: "Everyone votes for parties. Seats are shared out and a coalition picks the Premier.",
+    id: "parliament", name: "Parliament", leaderTitle: "Premier", night: "seats",
+    tagline: "Counties fill assembly seats by party vote. Then the parties bargain live until a government forms - or doesn't.",
     selection: "popular", method: "proportional", methods: ["proportional"],
-    multiParty: true, integrity: 1, compulsory: 0, protection: 0, electorate: null, wealthWeighted: false, consensus: 0.5, threshold: 0.05,
-    weights: { ...W, party: 1.3 },
+    multiParty: true, integrity: 1, compulsory: 0, protection: 0, electorate: null, wealthWeighted: false, threshold: 0.05,
+    weights: { ...W, party: 1.4 },
+    words: { report: "counted", unit: "votes", county: "Constituency", counties: "constituencies" },
   },
   {
-    id: "singleparty", name: "Single-Party State", leaderTitle: "Chairman",
-    description: "Turnout is enforced and the count is managed for the endorsed candidate. The leader is hard to beat.",
-    selection: "popular", method: "plurality", methods: ["plurality", "runoff"],
-    multiParty: false, integrity: 0.35, compulsory: 0.93, protection: 0.85, electorate: null, wealthWeighted: false, consensus: 0.5,
-    weights: { ...W, policy: 0.6, retro: 0.7, party: 0 },
+    id: "singleparty", name: "Single-Party State", leaderTitle: "Chairman", night: "bulletin",
+    tagline: "Turnout is enforced and bulletins arrive suspiciously fast. The true count is secret, crowds may protest, and the Party can step in.",
+    selection: "popular", method: "plurality", methods: ["plurality"],
+    multiParty: false, integrity: 0.35, compulsory: 0.96, protection: 0.85, electorate: null, wealthWeighted: false,
+    weights: { ...W, policy: 0.6, retro: 0.8, party: 0 },
+    words: { report: "reported", unit: "votes", county: "District", counties: "districts" },
   },
   {
-    id: "monarchy", name: "Royal Council", leaderTitle: "Monarch",
-    description: "Nobles and elders of each region vote in rounds until 60% agree. Family ties to a region count.",
+    id: "monarchy", name: "Royal Council", leaderTitle: "Monarch", night: "council",
+    tagline: "The noble house of each county swears fealty in rounds until 60% agree. Gold buys loyalty and blood ties matter.",
     selection: "council", method: "plurality", methods: ["plurality"],
-    multiParty: false, integrity: 1, compulsory: 0, protection: 0.7, electorate: { nobility: 1, elders: 0.5, clergy: 0.3 }, wealthWeighted: true, consensus: 0.6,
-    weights: { ...W, kin: 1.2, retro: 0.6 },
+    multiParty: false, integrity: 1, compulsory: 0, protection: 0.7, electorate: { nobility: 1, elders: 0.4 }, wealthWeighted: true, consensus: 0.6,
+    weights: { ...W, kin: 1.4, retro: 0.5, money: 1.2 },
+    council: { elector: (r, k) => (k ? `The ${["Baron", "Count", "Duke"][k - 1]} of ${r}` : `House of ${r}`), seats: 3, verb: "swears fealty to", bribery: true, maxRounds: 7, minRounds: 2,
+      flavor: ["Envoys whisper in the palace corridors...", "{a} hosts a lavish feast for the undecided houses.", "Old grudges between the houses resurface.", "{a}'s claim is questioned in the great hall.", "Servants carry sealed letters between the houses."] },
   },
   {
-    id: "clan", name: "Clan Council", leaderTitle: "High Chieftain",
-    description: "Each region's clan votes as a group. Rounds continue until two-thirds agree. Clans favor their own.",
+    id: "clan", name: "Clan Council", leaderTitle: "High Chieftain", night: "council",
+    tagline: "Every county's clan raises its banner. Two-thirds must agree, clans back their own, and slighted clans walk out.",
     selection: "council", method: "plurality", methods: ["plurality"],
     multiParty: false, integrity: 1, compulsory: 0, protection: 0.5, electorate: null, wealthWeighted: false, consensus: 0.66,
-    weights: { ...W, kin: 2, competence: 1.2 },
+    weights: { ...W, kin: 2.2, competence: 1.2 },
+    council: { elector: (r, k) => (k ? `${r} Elder ${["I", "II", "III"][k - 1]}` : `Clan of ${r}`), seats: 3, verb: "raises its banner for", walkouts: true, maxRounds: 8,
+      flavor: ["The elders tell stories of the old chieftains.", "{a} challenges {b} to prove their strength.", "Drums beat as the clans argue late into the night.", "{a} reminds the council of an old debt.", "A shaman reads the signs in the fire."] },
   },
   {
-    id: "theocracy", name: "Sacred Conclave", leaderTitle: "High Prophet",
-    description: "The faithful of each region send electors, who vote in rounds until two-thirds agree.",
+    id: "theocracy", name: "Sacred Conclave", leaderTitle: "High Prophet", night: "council",
+    tagline: "Clergy electors ballot in silence. Dark smoke means no choice; bright fire means a Prophet. Piety outweighs charm.",
     selection: "council", method: "plurality", methods: ["plurality"],
     multiParty: false, integrity: 1, compulsory: 0, protection: 0.75, electorate: { clergy: 1, elders: 0.25 }, wealthWeighted: false, consensus: 0.66,
-    weights: { ...W, policy: 1.3, money: 0 },
+    weights: { ...W, policy: 1.3, money: 0, integrity: 2.2, valence: 0.6 },
+    council: { elector: (r, k) => `Elector of ${r}${k ? ` ${["I", "II", "III", "IV"][k]}` : ""}`, seats: 3, verb: "writes the name of", secret: true, relaxAfter: 5, maxRounds: 9, minRounds: 3,
+      flavor: ["The electors fast and pray.", "A sermon by {a} moves several electors.", "Crowds keep vigil outside, watching the chimney.", "The electors walk the cloisters in silence.", "Old scriptures are read aloud between ballots."] },
   },
   {
-    id: "junta", name: "Military Junta", leaderTitle: "Marshal",
-    description: "Garrison officers vote. Competence matters more than charm.",
+    id: "junta", name: "Military Junta", leaderTitle: "Marshal", night: "council",
+    tagline: "Garrison commanders pick the Marshal. Competence and security rule - and a sore loser may attempt a coup.",
     selection: "council", method: "plurality", methods: ["plurality"],
-    multiParty: false, integrity: 1, compulsory: 0, protection: 0.6, electorate: { soldiers: 1, frontier: 0.15 }, wealthWeighted: false, consensus: 0.5,
-    weights: { ...W, competence: 1.8, valence: 0.7, retro: 1.2 },
+    multiParty: false, integrity: 1, compulsory: 0, protection: 0.6, electorate: { soldiers: 1, frontier: 0.2 }, wealthWeighted: false, consensus: 0.5,
+    weights: { ...W, competence: 2, valence: 0.6, retro: 1.3 },
+    council: { elector: (r, k) => (k ? `${r} ${["Cavalry", "Artillery", "Fleet"][k - 1]}` : `${r} Garrison`), seats: 3, verb: "pledges its troops to", coup: true, maxRounds: 6, minRounds: 2,
+      flavor: ["{a} briefs the officers on the border situation.", "{b}'s staff officers lobby the undecided commanders.", "Cavalry units are seen moving near the capital.", "The officers argue over the last campaign.", "{a} promises promotions to loyal commanders."] },
   },
   {
-    id: "guild", name: "Guild Oligarchy", leaderTitle: "Grand Magistrate",
-    description: "Only merchants, artisans and landholders vote, weighted by their region's wealth. Money talks.",
-    selection: "popular", method: "ranked", methods: ["ranked", "plurality", "electoral"],
-    multiParty: true, integrity: 0.9, compulsory: 0, protection: 0.2, electorate: { merchants: 1, artisans: 0.8, nobility: 0.7, sailors: 0.4 }, wealthWeighted: true, consensus: 0.5,
-    weights: { ...W, money: 2.2 },
-  },
-  {
-    id: "technocracy", name: "Technocracy", leaderTitle: "Director",
-    description: "Educated voters rank the candidates. Competence beats charm.",
-    selection: "popular", method: "ranked", methods: ["ranked", "runoff", "plurality"],
-    multiParty: true, integrity: 1, compulsory: 0, protection: 0.3, electorate: { scholars: 1, artisans: 0.5, merchants: 0.35, elders: 0.2 }, wealthWeighted: false, consensus: 0.5,
-    weights: { ...W, competence: 2.5, valence: 0.6 },
-  },
-  {
-    id: "commune", name: "Commune", leaderTitle: "Speaker",
-    description: "Everyone ranks the candidates directly. Courting groups matters most.",
-    selection: "popular", method: "ranked", methods: ["ranked", "runoff", "plurality"],
-    multiParty: true, integrity: 1, compulsory: 0, protection: 0, electorate: null, wealthWeighted: false, consensus: 0.5,
-    weights: { ...W, group: 1.3, party: 0.6 },
+    id: "guild", name: "Guild Oligarchy", leaderTitle: "Grand Magistrate", night: "count",
+    tagline: "Only merchants, artisans and landholders vote - weighted by wealth. Exchanges report shares live; money talks loudest.",
+    selection: "popular", method: "ranked", methods: ["ranked", "plurality"],
+    multiParty: true, integrity: 0.92, compulsory: 0, protection: 0.2, electorate: { merchants: 1, artisans: 0.8, nobility: 0.7, sailors: 0.4 }, wealthWeighted: true,
+    weights: { ...W, money: 2.4 },
+    words: { report: "of shares tallied", unit: "shares", county: "Exchange", counties: "exchanges" },
   },
 ];
 
@@ -95,8 +98,10 @@ export function effectiveGov(nation) {
   const gov = { ...base, weights: { ...base.weights } };
   for (const key of OVERRIDABLE) if (s[key] !== undefined && s[key] !== null) gov[key] = s[key];
   if (!gov.methods.includes(gov.method)) gov.methods = [gov.method, ...gov.methods];
+  gov.consensus = gov.consensus ?? 0.5;
   gov.threshold = gov.threshold ?? 0.05;
   gov.ballotWeight = s.ballotWeight ?? 25;
-  gov.revealSeconds = s.revealSeconds ?? 8;
+  gov.nightMinutes = s.nightMinutes ?? 20;
+  gov.words = gov.words || { report: "counted", unit: "votes", county: "County", counties: "counties" };
   return gov;
 }

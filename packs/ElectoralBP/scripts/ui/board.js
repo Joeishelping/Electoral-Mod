@@ -8,25 +8,31 @@ import { STANCES, STANCE_BY_ID, getStance, setStance } from "../engine/diplomacy
 import { confirm, modal, notice } from "./forms.js";
 import { announce, commit, isAdmin, loop, page, S } from "./nav.js";
 import { nationSummary, regionProfile, statusLine } from "./render.js";
-import { castBallot, electionControl, historyMenu, moodMenu, pollMenu, viewResult } from "./elections.js";
-import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, settingsMenu } from "./setup.js";
+import { castBallot, electionControl, historyMenu, liveResults, moodMenu, pollMenu, viewResult } from "./elections.js";
+import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, settingsMenu, termMenu } from "./setup.js";
 
 const HELP = [
   "§lHow the Board Table works§r",
   "",
-  "§61. Set up a nation§r - name it and pick a voting style (Democracy, Parliament, Single-Party State, councils...). The style only decides how the vote works. You run the country.",
+  "§61. Add a nation§r and pick its government. Every type votes AND plays out differently on election night:",
+  " §eDemocracy§r - counties report live, races get called, close ones recounted.",
+  " §eParliament§r - seats fill up, then live coalition talks.",
+  " §eSingle-Party State§r - fast official bulletins, a secret true count, protests.",
+  " §eRoyal Council§r - noble houses swear fealty; gold buys loyalty.",
+  " §eClan Council§r - clans raise banners; slighted clans walk out.",
+  " §eSacred Conclave§r - secret ballots, dark smoke or bright fire.",
+  " §eMilitary Junta§r - garrisons pledge troops; losers may try a coup.",
+  " §eGuild Oligarchy§r - wealth-weighted shares; money talks.",
   "",
-  "§62. Add counties§r - pick what kind of place each is (farmland, mining hills, port town...). That decides who lives there - farmers, miners, merchants, clergy, youth - and what they care about.",
+  "§62. Add counties§r by type (farmland, mining hills, port...). That sets who lives there and which parties they've historically backed. Counties remember every result.",
   "",
-  "§63. Add candidates§r - name them, give them up to 3 main issues, ratings, groups they court and counties they campaign in.",
+  "§63. Add candidates§r - name them, pick main issues, ratings, groups they court and counties they campaign in.",
   "",
-  "§64. Rate the leader§r - performance sliders. Voters punish or reward whoever is in office (and their party).",
+  "§64. Judge the term§r - performance sliders plus Issues of the Term (war, recession, scandal...).",
   "",
-  "§65. Start an election§r - players vote at any Board Table. Run polls during the campaign.",
+  "§65. Run the election§r - players vote at any Board Table; run polls during the campaign.",
   "",
-  "§66. Close the polls§r - results come in county by county in chat, with a running total and a projection, then the winner is announced.",
-  "",
-  "Every group in every county weighs each candidate's stances, main issues, personality, home county, who they court, party loyalty and the leader's record - then the count includes realistic swings, so upsets can happen.",
+  "§66. Election night§r (about 20 min) - results stream into chat with a live sidebar scoreboard. Election-day surprises, exit polls, lead changes, calls and recounts. Polls can be wrong!",
   "",
   "§7Admins: operators, or /tag <player> add electoral_admin",
 ].join("\n");
@@ -42,6 +48,7 @@ export function nationView(player, nation) {
       title: nation.name,
       body: nationSummary(state, nation),
       options: [
+        nation.count && { text: "§b§lLIVE RESULTS", icon: "textures/items/compass_item", run: () => liveResults(player, nation) },
         e && !nation.count && e.kind === "popular" && { text: "§2Vote", icon: "textures/items/paper", run: () => castBallot(player, nation) },
         e && !nation.count && { text: "Latest Poll", icon: "textures/items/compass_item", run: () => pollMenu(player, nation) },
         nation.history[0] && { text: "Last Results", icon: "textures/items/book_written", run: () => viewResult(player, nation, nation.history[0]) },
@@ -57,6 +64,7 @@ export function nationView(player, nation) {
         admin && { text: "§eCounties", run: () => countiesMenu(player, nation) },
         admin && gov.multiParty && { text: "§eParties", icon: "textures/items/banner_pattern", run: () => partiesMenu(player, nation) },
         admin && { text: "§eLeader Performance", icon: "textures/items/clock_item", run: () => performanceMenu(player, nation) },
+        admin && { text: "§eIssues of the Term", icon: "textures/items/blaze_powder", run: () => termMenu(player, nation) },
         admin && { text: "§eNation Settings", run: () => settingsMenu(player, nation) },
       ],
     };
@@ -68,7 +76,7 @@ async function addNation(player) {
   const used = new Set(Object.values(state.nations).map((n) => n.color));
   const r = await modal(player, "Add a Nation", [
     { key: "name", type: "text", label: "Nation name §c(required)", placeholder: "Type the nation's name", value: "" },
-    { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.description}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name) },
+    { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.tagline}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name) },
     { key: "color", type: "dropdown", label: "Color", options: colorOptions(), value: Math.max(0, COLORS.findIndex((c) => !used.has(c))) },
   ], "Create");
   if (!r) return;
