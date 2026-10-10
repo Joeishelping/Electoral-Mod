@@ -46,6 +46,10 @@ function buildElectors(ctx) {
         loyalty: 0.6,
         volatility: 0.6,
         retro: blend.retro,
+        mix: (() => {
+          const t = blend.mix.reduce((a, [, w]) => a + w, 0) || 1;
+          return blend.mix.map(([g, w]) => [g, w / t]);
+        })(),
         memory: {},
         conviction: 0.6,
       });

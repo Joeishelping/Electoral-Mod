@@ -1,19 +1,23 @@
-// Policy axes. Every voter group, candidate, party and clan holds a position
-// from -100 (the "low" pole) to +100 (the "high" pole) on each axis.
+// Policy axes - the hot-button debates of the nation. Every interest group,
+// candidate and party holds a position from -100 (the "low" side) to +100 (the
+// "high" side) on each. Ids are internal; names are what players see.
 
 export const ISSUES = [
-  { id: "economy", name: "Economy", low: "State Control", high: "Free Enterprise" },
-  { id: "welfare", name: "Welfare", low: "Self-Reliance", high: "Safety Net" },
-  { id: "labor", name: "Labor", low: "Owner Rights", high: "Worker Rights" },
-  { id: "military", name: "Military", low: "Peace First", high: "Strong Army" },
-  { id: "order", name: "Law & Order", low: "Civil Liberty", high: "Strict Order" },
-  { id: "tradition", name: "Tradition", low: "Progress", high: "Tradition & Faith" },
-  { id: "environment", name: "Land & Nature", low: "Industry First", high: "Protect Nature" },
-  { id: "trade", name: "Trade", low: "Protectionism", high: "Open Trade" },
-  { id: "expansion", name: "Expansion", low: "Stay Home", high: "Expand Borders" },
-  { id: "infrastructure", name: "Public Works", low: "Lean Spending", high: "Build Big" },
-  { id: "authority", name: "Authority", low: "Local Autonomy", high: "Central Power" },
-  { id: "settlers", name: "Newcomers", low: "Closed Borders", high: "Open Borders" },
+  { id: "economy", name: "Taxes & Business", low: "Tax the Rich", high: "Cut Taxes" },
+  { id: "welfare", name: "Welfare State", low: "Slash Handouts", high: "Expand Welfare" },
+  { id: "labor", name: "Unions & Wages", low: "Break the Unions", high: "Higher Minimum Wage" },
+  { id: "military", name: "Military Spending", low: "Cut the Military", high: "Arms Buildup" },
+  { id: "order", name: "Crime & Policing", low: "Police Reform", high: "Tough on Crime" },
+  { id: "tradition", name: "Religion & Values", low: "Secular Progress", high: "Traditional Values" },
+  { id: "environment", name: "Environment", low: "Drill & Mine", high: "Green Agenda" },
+  { id: "trade", name: "Trade Policy", low: "Tariffs", high: "Free Trade" },
+  { id: "expansion", name: "Foreign Policy", low: "Isolationism", high: "Expansionism" },
+  { id: "infrastructure", name: "Public Spending", low: "Austerity", high: "Big Public Works" },
+  { id: "authority", name: "Central Power", low: "Local Control", high: "Strong Central State" },
+  { id: "settlers", name: "Immigration", low: "Close the Borders", high: "Open Borders" },
+  { id: "guns", name: "Gun Rights", low: "Gun Control", high: "Gun Rights" },
+  { id: "speech", name: "Free Speech", low: "Censor Hate & Lies", high: "Absolute Free Speech" },
+  { id: "drugs", name: "Drug Policy", low: "War on Drugs", high: "Legalize It" },
 ];
 
 export const ISSUE_IDS = ISSUES.map((i) => i.id);

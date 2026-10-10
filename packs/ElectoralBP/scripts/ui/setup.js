@@ -9,9 +9,11 @@ import { createParty, createPerson, deleteNation, deletePerson, displayName, nat
 import { clamp, createRng } from "../core/random.js";
 import { addRegionOfType, autoApportion, seedHistoricalLean } from "../engine/generate.js";
 import { TERM_EVENTS } from "../data/events.js";
-import { confirm, fmt, modal, notice } from "./forms.js";
+import { confirm, fmt, menu, modal, notice } from "./forms.js";
 import { CLOSE, commit, loop, S } from "./nav.js";
 import { metricsPage, personCard, regionProfile, stanceText } from "./render.js";
+import { dossierPage } from "./dossier.js";
+import { MAX_TRAITS, TRAITS, TRAIT_BY_ID } from "../data/traits.js";
 
 const rng = () => createRng(Math.floor(Math.random() * 2 ** 31));
 const int = (v, fallback) => {
@@ -49,10 +51,10 @@ async function candidateBasics(player, nation, p, title = "Candidate") {
 async function candidateRatings(player, p) {
   const fields = [
     ["popularity", "Popularity - how well-liked they are overall"],
-    ["charisma", "Charisma - wins over youth and workers"],
-    ["competence", "Competence - wins over scholars and merchants"],
-    ["integrity", "Honesty - wins over clergy and elders"],
-    ["funds", "Campaign money"],
+    ["charisma", "Charisma - youth, patriots and the poor love it"],
+    ["competence", "Competence - business, progressives and veterans want it"],
+    ["integrity", "Honesty - religious voters and retirees demand it"],
+    ["funds", "Campaign war chest"],
   ];
   const r = await modal(player, `Ratings: ${displayName(p)}`, fields.map(([k, label]) => ({ key: k, type: "slider", label, min: 0, max: 100, step: 5, value: p[k] })));
   if (!r) return;
@@ -65,10 +67,10 @@ async function candidateIssues(player, p) {
   for (let k = 0; k < 3; k++) {
     const f = p.focus[k];
     const idx = f ? SIDES.findIndex((s) => s.issue === f && s.sign === (p.positions[f] < 0 ? -1 : 1)) + 1 : 0;
-    fields.push({ key: `s${k}`, type: "dropdown", label: `Main issue ${k + 1}`, options: ["(none)", ...SIDES.map((s) => s.label)], value: idx });
+    fields.push({ key: `s${k}`, type: "dropdown", label: `Cause #${k + 1} they are lobbying for`, options: ["(none)", ...SIDES.map((s) => s.label)], value: idx });
     fields.push({ key: `x${k}`, type: "dropdown", label: "How strongly?", options: ["Moderately", "Strongly"], value: f && Math.abs(p.positions[f]) >= 65 ? 1 : 0 });
   }
-  const r = await modal(player, `Main Issues: ${displayName(p)}`, fields);
+  const r = await modal(player, `Agenda: ${displayName(p)}`, fields);
   if (!r) return;
   const focus = [];
   for (let k = 0; k < 3; k++) {
@@ -85,8 +87,8 @@ async function candidateAppeal(player, nation, p) {
   const groups = ["(none)", ...BLOCS.map((b) => b.name)];
   const counties = ["(none)", ...nation.regions.map((x) => x.name)];
   const fields = [];
-  for (let k = 0; k < 3; k++) fields.push({ key: `g${k}`, type: "dropdown", label: `Group they court #${k + 1}`, options: groups, value: Math.max(0, BLOCS.findIndex((b) => b.id === p.targets[k]) + 1) });
-  for (let k = 0; k < 3; k++) fields.push({ key: `r${k}`, type: "dropdown", label: `County they campaign in #${k + 1}`, options: counties, value: Math.max(0, nation.regions.findIndex((x) => x.id === p.campaignRegions[k]) + 1) });
+  for (let k = 0; k < 3; k++) fields.push({ key: `g${k}`, type: "dropdown", label: `Interest group they court #${k + 1}`, options: groups, value: Math.max(0, BLOCS.findIndex((b) => b.id === p.targets[k]) + 1) });
+  for (let k = 0; k < 3; k++) fields.push({ key: `r${k}`, type: "dropdown", label: `Campaign stop #${k + 1}`, options: counties, value: Math.max(0, nation.regions.findIndex((x) => x.id === p.campaignRegions[k]) + 1) });
   const r = await modal(player, `Campaign: ${displayName(p)}`, fields);
   if (!r) return;
   p.targets = [...new Set([0, 1, 2].map((k) => BLOCS[r[`g${k}`] - 1]?.id).filter(Boolean))];
@@ -102,6 +104,45 @@ async function stanceSliders(player, title, positions) {
   return true;
 }
 
+async function candidateTraits(player, p) {
+  const opts = ["(none)", ...TRAITS.map((t) => t.name)];
+  const fields = [];
+  for (let k = 0; k < MAX_TRAITS; k++) fields.push({ key: `t${k}`, type: "dropdown", label: k === 0 ? `Who are they? Traits change how each interest group sees them.\n\nTrait #${k + 1}` : `Trait #${k + 1}`, options: opts, value: Math.max(0, TRAITS.findIndex((t) => t.id === p.traits[k]) + 1) });
+  const r = await modal(player, `Traits: ${displayName(p)}`, fields);
+  if (!r) return;
+  const picked = [];
+  const dropped = [];
+  for (let k = 0; k < MAX_TRAITS; k++) {
+    const t = TRAITS[r[`t${k}`] - 1];
+    if (!t || picked.includes(t.id)) continue;
+    if (picked.some((id) => (t.opposite || []).includes(id))) dropped.push(t.name);
+    else picked.push(t.id);
+  }
+  p.traits = picked;
+  commit();
+  if (dropped.length) player.sendMessage(`§eSkipped ${dropped.join(", ")}: it contradicts another trait.`);
+}
+
+async function candidateMate(player, nation, p) {
+  const others = nationPersons(S(), nation).filter((x) => x.id !== p.id && x.name);
+  const r = await modal(player, `Running Mate: ${displayName(p)}`, [
+    { key: "m", type: "dropdown", label: "Who runs alongside them? A mate's traits, home county and contacts help (or hurt) the ticket.", options: ["(nobody)", ...others.map((x) => x.name)], value: Math.max(0, others.findIndex((x) => x.id === p.runningMateId) + 1) },
+  ]);
+  if (!r) return;
+  p.runningMateId = r.m === 0 ? null : others[r.m - 1].id;
+  commit();
+}
+
+async function candidateBackers(player, p) {
+  const groups = ["(none)", ...BLOCS.map((b) => b.name)];
+  const r = await modal(player, `Lobby Backers: ${displayName(p)}`, [0, 1].map((k) => ({
+    key: `b${k}`, type: "dropdown", label: k === 0 ? "Which lobbies bankroll the campaign? Their members rally to you and the money helps - but their rivals resent it.\n\nBacker #1" : "Backer #2", options: groups, value: Math.max(0, BLOCS.findIndex((b) => b.id === p.backers[k]) + 1),
+  })));
+  if (!r) return;
+  p.backers = [...new Set([r.b0, r.b1].map((i) => BLOCS[i - 1]?.id).filter(Boolean))];
+  commit();
+}
+
 function candidateMenu(player, nation, p) {
   return loop(player, () => {
     if (!S().persons[p.id]) return null;
@@ -109,10 +150,14 @@ function candidateMenu(player, nation, p) {
       title: displayName(p).replace(/§./g, ""),
       body: personCard(S(), nation, p),
       options: [
+        { text: "§bGroup Support (who likes them & why)", icon: "textures/items/name_tag", run: () => dossierPage(player, nation, p.id) },
         { text: "Name, Party & Home County", run: () => candidateBasics(player, nation, p) },
-        { text: "Main Issues", run: () => candidateIssues(player, p) },
+        { text: "Traits", run: () => candidateTraits(player, p) },
+        { text: "Agenda (what they're lobbying for)", run: () => candidateIssues(player, p) },
         { text: "Ratings", run: () => candidateRatings(player, p) },
-        { text: "Campaign (groups & counties)", run: () => candidateAppeal(player, nation, p) },
+        { text: "Running Mate", run: () => candidateMate(player, nation, p) },
+        { text: "Lobby Backers", run: () => candidateBackers(player, p) },
+        { text: "Courting & Campaign Trail", run: () => candidateAppeal(player, nation, p) },
         { text: "§7All Stances (advanced)", run: () => stanceSliders(player, `Stances: ${displayName(p)}`, p.positions) },
         {
           text: "§cDelete Candidate",
@@ -148,7 +193,7 @@ export function candidatesMenu(player, nation) {
     const people = nationPersons(state, nation).sort((a, b) => displayName(a).localeCompare(displayName(b)));
     return {
       title: "Candidates",
-      body: "§7The people who can run. You name them; give each one main issues, ratings and a campaign so voters have something to judge.",
+      body: "§7The people who can run. Who you pick matters: traits, agenda, running mate and lobby backers all change which interest groups back them.",
       options: [
         { text: "§2+ New Candidate", run: () => newCandidate(player, nation) },
         ...people.map((p) => ({ text: `${personLabel(state, nation, p)}${p.id === nation.leaderId ? " §6(in office)" : ""}`, run: () => candidateMenu(player, nation, p) })),
@@ -162,7 +207,7 @@ export function candidatesMenu(player, nation) {
 async function addCounty(player, nation) {
   const r = await modal(player, "Add County", [
     { key: "name", type: "text", label: "Name (leave blank for a random name)", placeholder: "County name", value: "" },
-    { key: "type", type: "dropdown", label: "What kind of place is it? (decides who lives there)", options: REGION_TEMPLATES.map((t) => t.name) },
+    { key: "type", type: "dropdown", label: "What kind of place is it? (decides which interest groups live there)", options: REGION_TEMPLATES.map((t) => t.name) },
     { key: "pop", type: "text", label: "Population (leave blank for typical)", placeholder: "e.g. 5000", value: "" },
   ], "Add");
   if (!r) return;
@@ -209,9 +254,9 @@ function countyMenu(player, nation, region) {
       options: [
         { text: "Name, Population & Type", run: () => editCounty(player, nation, region) },
         {
-          text: "§7Who Lives Here (advanced)",
+          text: "§7Interest Group Mix (advanced)",
           run: async () => {
-            const r = await modal(player, "Who Lives Here", BLOCS.map((b) => ({ key: b.id, type: "slider", label: `${b.name} §7(share)`, min: 0, max: 100, value: region.blocs[b.id] || 0 })));
+            const r = await modal(player, "Interest Group Mix", BLOCS.map((b) => ({ key: b.id, type: "slider", label: `${b.name} §7(share)`, min: 0, max: 100, value: region.blocs[b.id] || 0 })));
             if (!r) return;
             region.blocs = {};
             for (const b of BLOCS) if (r[b.id] > 0) region.blocs[b.id] = r[b.id];
@@ -428,23 +473,28 @@ export function settingsMenu(player, nation) {
     body: `${nation.color}§l${nation.name}§r §7· ${GOV_BY_ID[nation.gov].name}`,
     options: [
       {
-        text: "Name, Color & Style",
+        text: "Name & Color",
         run: async () => {
           const r = await modal(player, "Nation", [
             { key: "name", type: "text", label: "Nation name", value: nation.name },
             { key: "color", type: "dropdown", label: "Color", options: colorOptions(), value: Math.max(0, COLORS.indexOf(nation.color)) },
-            { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.tagline}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name), value: Math.max(0, GOVERNMENTS.findIndex((g) => g.id === nation.gov)) },
           ]);
           if (!r) return;
           nation.name = r.name.trim() || nation.name;
           nation.color = COLORS[r.color];
-          const gov = GOVERNMENTS[r.gov].id;
-          if (gov !== nation.gov) {
-            nation.gov = gov;
-            nation.settings = { totalSeats: nation.settings.totalSeats, ballotWeight: nation.settings.ballotWeight, nightMinutes: nation.settings.nightMinutes };
-            if (nation.election && !nation.count) nation.election = null;
-          }
           commit();
+        },
+      },
+      {
+        text: `Government Type\n§7${GOV_BY_ID[nation.gov].name}`,
+        run: async () => {
+          const gov = await pickGovernment(player, nation.gov);
+          if (!gov || gov === nation.gov) return;
+          nation.gov = gov;
+          nation.settings = { totalSeats: nation.settings.totalSeats, ballotWeight: nation.settings.ballotWeight, nightMinutes: nation.settings.nightMinutes };
+          if (nation.election && !nation.count) nation.election = null;
+          commit();
+          player.sendMessage(`§a${nation.name} is now a ${GOV_BY_ID[gov].name}.`);
         },
       },
       { text: "§7Voting Rules (advanced)", run: () => rules(player, nation) },
@@ -486,4 +536,17 @@ export function termMenu(player, nation) {
       ],
     };
   });
+}
+
+// ---------- choosing a government ----------
+
+/** One button per government type, then a details page to confirm. Returns an id or null. */
+export async function pickGovernment(player, currentId = null) {
+  for (;;) {
+    const idx = await menu(player, "Choose a Government", "§7Each type votes differently and has its own election night.", GOVERNMENTS.map((g) => `${g.id === currentId ? "§a" : ""}${g.name}\n§8${g.leaderTitle} · ${g.selection === "council" ? "council vote" : "public vote"}`));
+    if (idx === undefined) return null;
+    const g = GOVERNMENTS[idx];
+    const body = [`§l${g.name}§r`, "", `§7Leader: §f${g.leaderTitle}`, `§7Who votes: §f${g.selection === "council" ? "a council of electors" : g.electorate ? "only certain interest groups" : "everyone"}`, "", `§f${g.tagline}`].join("\n");
+    if (await confirm(player, g.name, body, "§aChoose this", "Back")) return g.id;
+  }
 }

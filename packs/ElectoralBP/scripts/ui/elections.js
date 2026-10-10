@@ -41,7 +41,7 @@ export function viewResult(player, nation, result) {
     body: resultSummary(result, internal),
     options: [
       result.regions.length && { text: "Results by County", icon: "textures/items/map_filled", run: () => regionsList(player, result, internal) },
-      result.blocs.length && (internal || !result.official) && { text: "How Each Group Voted", icon: "textures/items/name_tag", run: () => page(player, "Groups", blocsPage(result)) },
+      result.blocs.length && (internal || !result.official) && { text: "How Interest Groups Voted", icon: "textures/items/name_tag", run: () => page(player, "Groups", blocsPage(result)) },
       result.rounds.length > 1 && { text: "Round by Round", icon: "textures/items/paper", run: () => page(player, "Rounds", roundsPage(result)) },
       admin && result.official && { text: internal ? "§aShow Official Figures" : "§cShow True Count (admin)", run: () => { internal = !internal; } },
     ],
@@ -116,7 +116,7 @@ export function moodMenu(player, nation) {
     "§6By county",
     ...survey.regions.map((r) => ` §f${r.name}§r ${bar(r.approval, 12, r.approval >= 0.5 ? "§a" : "§c")} ${pct(r.approval, 0)}${r.unrest ? ` §c(unrest ${r.unrest})` : ""}`),
     "",
-    "§6By group",
+    "§6By interest group",
     ...survey.blocs.sort((x, y) => y.approval - x.approval).map((b) => ` §f${BLOC_BY_ID[b.id]?.name}§r ${bar(b.approval, 12, b.approval >= 0.5 ? "§a" : "§c")} ${pct(b.approval, 0)}`),
   ];
   return page(player, "Public Mood", lines.join("\n"));
@@ -183,7 +183,7 @@ async function startElection(player, nation) {
     { key: "title", type: "text", label: "Election name", value: `${gov.leaderTitle} Election ${nation.electionCount + 1}` },
     { key: "minutes", type: "slider", label: "How long voting stays open, in minutes (0 = until you close it). When it closes, election night starts automatically.", min: 0, max: 180, step: 5, value: 30 },
   ];
-  if (methods.length > 1) fields.push({ key: "method", type: "dropdown", label: "How votes are counted", options: methods.map((m) => `${METHODS[m].name} - ${METHODS[m].desc}`), value: Math.max(0, methods.indexOf(gov.method)) });
+  if (methods.length > 1) fields.push({ key: "method", type: "dropdown", label: "How votes are counted", options: methods.map((m) => METHODS[m].name), value: Math.max(0, methods.indexOf(gov.method)) });
   if (gov.integrity < 0.999) {
     const def = ids.indexOf(nation.leaderId);
     fields.push({ key: "endorsed", type: "dropdown", label: "The state's endorsed candidate (the count is tilted toward them)", options: ids.map((id) => displayName(getPerson(state, id))), value: def >= 0 ? def : 0 });

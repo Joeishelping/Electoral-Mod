@@ -1,6 +1,6 @@
 // The Board Table: list of nations and each nation's page.
 
-import { GOVERNMENTS, GOV_BY_ID, effectiveGov } from "../data/governments.js";
+import { GOV_BY_ID, effectiveGov } from "../data/governments.js";
 import { COLORS } from "../data/names.js";
 import { createNation, displayName, getPerson } from "../core/state.js";
 import { resetState, stateSize } from "../core/storage.js";
@@ -9,7 +9,8 @@ import { confirm, modal, notice } from "./forms.js";
 import { announce, commit, isAdmin, loop, page, S } from "./nav.js";
 import { nationSummary, regionProfile, statusLine } from "./render.js";
 import { castBallot, electionControl, historyMenu, liveResults, moodMenu, pollMenu, viewResult } from "./elections.js";
-import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, settingsMenu, termMenu } from "./setup.js";
+import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, pickGovernment, settingsMenu, termMenu } from "./setup.js";
+import { interestGroupsPage } from "./dossier.js";
 
 const HELP = [
   "§lHow the Board Table works§r",
@@ -24,9 +25,9 @@ const HELP = [
   " §eMilitary Junta§r - garrisons pledge troops; losers may try a coup.",
   " §eGuild Oligarchy§r - wealth-weighted shares; money talks.",
   "",
-  "§62. Add counties§r by type (farmland, mining hills, port...). That sets who lives there and which parties they've historically backed. Counties remember every result.",
+  "§62. Add counties§r by type (capital, farm country, industrial town, university town...). That sets which interest groups live there - Business Lobby, Trade Unions, Religious Conservatives, Gun Owners, Immigrants... - and which parties they've historically backed. Counties remember every result.",
   "",
-  "§63. Add candidates§r - name them, pick main issues, ratings, groups they court and counties they campaign in.",
+  "§63. Add candidates§r - the people you choose matter. Give them traits (War Hero, Corrupt, Devout, Union Organizer...), an agenda of causes they lobby for, a running mate, lobby backers, and a campaign trail. Check Group Support to see who loves them and why.",
   "",
   "§64. Judge the term§r - performance sliders plus Issues of the Term (war, recession, scandal...).",
   "",
@@ -54,6 +55,7 @@ export function nationView(player, nation) {
         nation.history[0] && { text: "Last Results", icon: "textures/items/book_written", run: () => viewResult(player, nation, nation.history[0]) },
         nation.history.length > 1 && { text: "Past Elections", run: () => historyMenu(player, nation) },
         nation.leaderId && { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },
+        nation.regions.length > 0 && { text: "Interest Groups", icon: "textures/items/name_tag", run: () => interestGroupsPage(player, nation) },
         nation.regions.length > 0 && {
           text: "Counties & Voters",
           icon: "textures/items/map_filled",
@@ -76,12 +78,13 @@ async function addNation(player) {
   const used = new Set(Object.values(state.nations).map((n) => n.color));
   const r = await modal(player, "Add a Nation", [
     { key: "name", type: "text", label: "Nation name §c(required)", placeholder: "Type the nation's name", value: "" },
-    { key: "gov", type: "dropdown", label: GOVERNMENTS.map((g) => `§e${g.name}§r: §7${g.tagline}`).join("\n") + "\n\n§fVoting style:", options: GOVERNMENTS.map((g) => g.name) },
     { key: "color", type: "dropdown", label: "Color", options: colorOptions(), value: Math.max(0, COLORS.findIndex((c) => !used.has(c))) },
-  ], "Create");
+  ], "Next");
   if (!r) return;
   if (!r.name.trim()) return notice(player, "Name needed", "Give the nation a name.");
-  const nation = createNation(state, { name: r.name.trim(), gov: GOVERNMENTS[r.gov].id, color: COLORS[r.color] });
+  const gov = await pickGovernment(player);
+  if (!gov) return;
+  const nation = createNation(state, { name: r.name.trim(), gov, color: COLORS[r.color] });
   commit();
   player.sendMessage(`§aCreated ${nation.name}. Next: add counties and candidates.`);
   return nationView(player, nation);

@@ -2,7 +2,7 @@
 
 import { blankPositions, ISSUE_IDS } from "../data/issues.js";
 import { defaultMetrics } from "../data/metrics.js";
-import { BLOC_IDS } from "../data/blocs.js";
+import { BLOC_BY_ID, BLOC_IDS, LEGACY_BLOCS, REGION_TEMPLATES } from "../data/blocs.js";
 import { clamp } from "./random.js";
 
 export const STATE_VERSION = 2;
@@ -89,6 +89,9 @@ export function createPerson(state, nation, data = {}) {
     funds: data.funds ?? 50,
     homeRegion: data.homeRegion ?? null,
     campaignRegions: data.campaignRegions || [],
+    traits: data.traits || [], // CK3-style personality traits
+    backers: data.backers || [], // lobbies funding the campaign
+    runningMateId: data.runningMateId ?? null,
     terms: 0,
   };
   state.persons[person.id] = person;
@@ -139,6 +142,7 @@ export function deletePerson(state, personId) {
   if (!person) return;
   const nation = state.nations[person.nationId];
   delete state.persons[personId];
+  for (const p of Object.values(state.persons)) if (p.runningMateId === personId) p.runningMateId = null;
   if (!nation) return;
   if (nation.leaderId === personId) nation.leaderId = null;
   if (nation.election) {
@@ -168,6 +172,17 @@ export function normalizeState(state) {
       region.issueMods = region.issueMods || {};
       region.lean = region.lean || {};
       region.memory = region.memory || {};
+      // older saves used Minecraft professions: map them to interest groups
+      if (Object.keys(region.blocs || {}).some((b) => !BLOC_BY_ID[b])) {
+        const tpl = REGION_TEMPLATES.find((t) => t.id === region.template);
+        const blocs = {};
+        for (const [b, v] of Object.entries(region.blocs)) {
+          const id = BLOC_BY_ID[b] ? b : LEGACY_BLOCS[b];
+          if (id) blocs[id] = (blocs[id] || 0) + v;
+        }
+        region.blocs = tpl ? { ...tpl.mix } : Object.keys(blocs).length ? blocs : { middle: 1 };
+        region.memory = {};
+      }
       region.history = region.history || [];
       region.unrest = clamp(region.unrest || 0, 0, 100);
     }
@@ -179,6 +194,10 @@ export function normalizeState(state) {
     person.focus = person.focus || [];
     person.targets = person.targets || [];
     person.campaignRegions = person.campaignRegions || [];
+    person.traits = person.traits || [];
+    person.backers = (person.backers || []).filter((b) => BLOC_BY_ID[b]);
+    person.targets = person.targets.map((b) => LEGACY_BLOCS[b] || b).filter((b) => BLOC_BY_ID[b]);
+    if (person.runningMateId && !state.persons[person.runningMateId]) person.runningMateId = null;
   }
   return state;
 }

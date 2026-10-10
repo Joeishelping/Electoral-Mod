@@ -4,10 +4,10 @@
 export const METRICS = [
   { id: "economy", name: "Economy", issues: { economy: 1, trade: 0.6 } },
   { id: "jobs", name: "Jobs & Wages", issues: { labor: 1, welfare: 0.4, economy: 0.3 } },
-  { id: "security", name: "Safety & Defense", issues: { military: 1, order: 0.5, expansion: 0.3 } },
+  { id: "security", name: "Safety & Defense", issues: { military: 1, order: 0.6, expansion: 0.3, guns: 0.3 } },
   { id: "services", name: "Public Services", issues: { welfare: 1, infrastructure: 0.8, settlers: 0.2 } },
   { id: "food", name: "Food & Land", issues: { environment: 0.8, trade: 0.3 }, base: 0.2 },
-  { id: "integrity", name: "Honesty", issues: { order: 0.2, authority: 0.3 }, base: 0.45 },
+  { id: "integrity", name: "Honesty & Freedoms", issues: { authority: 0.3, speech: 0.4 }, base: 0.45 },
 ];
 
 export const METRIC_IDS = METRICS.map((m) => m.id);

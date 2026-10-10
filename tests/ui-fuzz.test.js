@@ -12,7 +12,7 @@ import { tick } from "../packs/ElectoralBP/scripts/ui/ticker.js";
 import { _hooks, _messages, _players, _props } from "@minecraft/server";
 import { buildNation } from "./helpers.js";
 
-const BAD = /undefined|NaN|\[object Object\]/;
+const BAD = /undefined|NaN|\[object Object\]|§k|§(?![0-9a-gk-or])/;
 let clock = Date.now();
 
 function makePlayer(rng, budget, admin = true) {
@@ -29,6 +29,13 @@ function makePlayer(rng, budget, admin = true) {
     async respond(form) {
       const texts = [form._title, form._body, ...(form.buttons || []), ...(form.fields || []).map((f) => f.label), ...(form.fields || []).flatMap((f) => f.items || [])];
       for (const t of texts) if (typeof t === "string") assert.doesNotMatch(t, BAD, `form text: ${t.slice(0, 300)}`);
+      // keep forms readable on a phone screen: no walls of text crammed into one control
+      const plain = (t) => String(t).replace(/§./g, "");
+      for (const f of form.fields || []) {
+        assert.ok(plain(f.label).length <= 260, `label too long (${plain(f.label).length}): ${plain(f.label).slice(0, 80)}`);
+        for (const it of f.items || []) assert.ok(plain(it).length <= 64, `dropdown option too long: ${plain(it)}`);
+      }
+      for (const b of form.buttons || []) for (const line of plain(b).split("\n")) assert.ok(line.length <= 64, `button line too long: ${line}`);
       seen.push(form._title);
       // time passes while the player clicks around
       clock += rng.int(0, 90000);
@@ -94,6 +101,6 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   assert.ok(JSON.parse(_props.get("electoral:state:meta")).count >= 1);
   const chat = _messages.join("\n");
   for (const must of ["closed", "first returns", "RESULT"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
-  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term"]) assert.ok(titles.has(must), `reached screen: ${must}`);
+  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government"]) assert.ok(titles.has(must), `reached screen: ${must}`);
   if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
 });

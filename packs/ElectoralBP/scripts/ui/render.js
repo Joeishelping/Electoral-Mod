@@ -2,6 +2,7 @@
 
 import { BLOC_BY_ID, REGION_TEMPLATES } from "../data/blocs.js";
 import { ISSUE_BY_ID, ISSUE_IDS } from "../data/issues.js";
+import { TRAIT_BY_ID } from "../data/traits.js";
 import { METRICS, gradeMetric } from "../data/metrics.js";
 import { effectiveGov, METHODS } from "../data/governments.js";
 import { displayName, getParty, getPerson, personLabel, regionBlocShares } from "../core/state.js";
@@ -70,8 +71,13 @@ export function personCard(state, nation, p) {
     `§7Party: §f${party ? party.name : "Independent"}§7 · From: §f${home ? home.name : "-"}§7 · Times elected: §f${p.terms || 0}`,
     `§7Popularity §f${p.popularity}§7 · Charisma §f${p.charisma}§7 · Competence §f${p.competence}§7 · Honesty §f${p.integrity}§7 · Money §f${p.funds}`,
   ];
-  if (p.focus.length) lines.push(`§7Main issues: §e${p.focus.map((f) => `${ISSUE_BY_ID[f].name} (${stanceText(f, p.positions[f])})`).join(", ")}`);
-  if (p.targets.length) lines.push(`§7Appeals to: §b${p.targets.map((b) => BLOC_BY_ID[b]?.name).join(", ")}`);
+  if ((p.traits || []).length) lines.push(`§7Traits: §d${p.traits.map((t) => TRAIT_BY_ID[t]?.name).filter(Boolean).join(", ")}`);
+  for (const t of (p.traits || []).map((id) => TRAIT_BY_ID[id]).filter(Boolean)) lines.push(`  §8${t.name}: ${t.desc}`);
+  if (p.focus.length) lines.push(`§7Lobbying for: §e${p.focus.map((f) => stanceText(f, p.positions[f])).join(", ")}`);
+  const mate = p.runningMateId ? state.persons[p.runningMateId] : null;
+  if (mate) lines.push(`§7Running mate: §f${displayName(mate)}${(mate.traits || []).length ? ` §8(${mate.traits.map((t) => TRAIT_BY_ID[t]?.name).filter(Boolean).join(", ")})` : ""}`);
+  if ((p.backers || []).length) lines.push(`§7Bankrolled by: §6${p.backers.map((b) => BLOC_BY_ID[b]?.name).join(", ")}`);
+  if (p.targets.length) lines.push(`§7Courting: §b${p.targets.map((b) => BLOC_BY_ID[b]?.name).join(", ")}`);
   if (p.campaignRegions.length) lines.push(`§7Campaigning in: §a${p.campaignRegions.map((id) => nation.regions.find((r) => r.id === id)?.name).filter(Boolean).join(", ")}`);
   const other = ISSUE_IDS.filter((id) => !p.focus.includes(id) && Math.abs(p.positions[id]) >= 30);
   if (other.length) lines.push(`§7Other stances: §f${other.map((id) => `${ISSUE_BY_ID[id].name}: ${stanceText(id, p.positions[id])}`).join(", ")}`);
@@ -89,8 +95,8 @@ export function regionProfile(state, nation, region) {
     "",
     `§6Pattern: §f${countyPattern(nation, region)}`,
     `§6Past winners: ${(region.history || []).length ? region.history.slice(0, 6).map((h) => `${h.color}${h.party || h.name}§7 (+${h.margin}%)`).join("§7, ") : "§7none yet"}`,
-    "§6Who lives here: §f" + Object.entries(shares).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([b, s]) => `${BLOC_BY_ID[b].name} ${pct(s, 0)}`).join(", "),
-    "§6Cares most about: §f" + pri.map((p) => ISSUE_BY_ID[p.id].name).join(", "),
+    "§6Interest groups: §f" + Object.entries(shares).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([b, s]) => `${BLOC_BY_ID[b].name} ${pct(s, 0)}`).join(", "),
+    "§6Hot-button issues: §f" + pri.map((p) => ISSUE_BY_ID[p.id].name).join(", "),
     "§6Leans toward: §f" + (lean.map((id) => stanceText(id, ideal[id])).join(", ") || "the middle"),
   ];
   const leans = nation.parties.filter((p) => region.lean[p.id]).map((p) => `${p.color}${p.name} ${region.lean[p.id] > 0 ? "+" : ""}${Math.round(region.lean[p.id] * 100)}`);

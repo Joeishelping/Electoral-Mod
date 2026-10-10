@@ -14,6 +14,9 @@
 //   record     retrospective voting on the performance sliders, routed through
 //              which metrics this group actually cares about
 //   loyalty    party leanings of the region and learned voting habits
+//   character  personality traits (War Hero, Devout, Corrupt...) - CK3 style
+//   mate       the running mate balancing the ticket
+//   backers    lobbies funding the campaign: money and loyalty, but rivals resent it
 //   kin        clan loyalty: councils favor candidates from their own region
 //
 // Groups then pick with a multinomial logit, with correlated national, regional
@@ -27,6 +30,7 @@ import { getPerson, regionBlocShares } from "../core/state.js";
 import { clamp } from "../core/random.js";
 import { diplomacySummary } from "./diplomacy.js";
 import { TERM_EVENT_BY_ID } from "../data/events.js";
+import { traitAppeal, traitMoney } from "../data/traits.js";
 
 export const ADULT_SHARE = 0.72;
 const DEFAULT_SALIENCE = 0.2;
@@ -78,8 +82,13 @@ export function buildContext(state, nation, candidateIds = []) {
 
   const leader = getPerson(state, nation.leaderId);
   const avgUnrest = nation.regions.length ? nation.regions.reduce((s, r) => s + (r.unrest || 0), 0) / nation.regions.length : 0;
+  const mates = {};
+  for (const c of candidates) {
+    const m = getPerson(state, c.runningMateId);
+    if (m && m.id !== c.id) mates[c.id] = m;
+  }
   return {
-    state, nation, gov, candidates, dip, natSal, metrics, incumbentBonus,
+    state, nation, gov, candidates, dip, natSal, metrics, incumbentBonus, mates,
     day: null, // election-day modifiers, set by the election engine
     incumbentId: nation.leaderId,
     incumbentParty: leader ? leader.partyId : null,
@@ -115,6 +124,7 @@ function groupFromBloc(ctx, region, blocId, share) {
     baseTurnout: bloc.turnout,
     rivals: bloc.rivals,
     retro: retroScore(ctx, region, [[blocId, 1]]),
+    mix: [[blocId, 1]],
     memory: region.memory?.[blocId] || {},
   };
 }
@@ -224,7 +234,30 @@ export function utility(ctx, group, cand, detail = false) {
       ((cand.charisma - 50) / 50) * 0.3 * t.charisma +
       ((cand.integrity - 50) / 50) * 0.25 * t.integrity * (W.integrity ?? 1)) +
     ((cand.competence - 50) / 50) * 0.3 * t.competence * W.competence +
-    ((cand.funds - 50) / 50) * 0.2 * t.wealth * W.money;
+    ((Math.min(130, cand.funds + traitMoney(cand.traits) + 12 * (cand.backers || []).length) - 50) / 50) * 0.2 * t.wealth * W.money;
+
+  // Character: personality traits, CK3-style.
+  const mix = group.mix || [];
+  const ta = traitAppeal(cand.traits, mix);
+  const character = ta.total * (W.character ?? 1);
+
+  // The running mate balances (or sinks) the ticket.
+  let mate = 0;
+  const rm = ctx.mates?.[cand.id];
+  if (rm) {
+    mate += 0.4 * traitAppeal(rm.traits, mix).total + ((rm.popularity - 50) / 50) * 0.15;
+    if (group.region && rm.homeRegion === group.region.id) mate += 0.2;
+    for (const [g, w] of mix) if ((rm.targets || []).includes(g)) mate += 0.15 * w;
+  }
+
+  // Lobby backers: their members rally behind you; their rivals resent it.
+  let backers = 0;
+  for (const b of cand.backers || []) {
+    for (const [g, w] of mix) {
+      if (g === b) backers += 0.35 * w;
+      else if (BLOC_BY_ID[g]?.rivals.includes(b)) backers -= 0.18 * w;
+    }
+  }
 
   // Local ties.
   let local = 0;
@@ -268,9 +301,9 @@ export function utility(ctx, group, cand, detail = false) {
     if (group.region) kin += day.region[`${cand.id}:${group.region.id}`] || 0;
   }
 
-  const total = loss + emphasis + valence + local + courting + record + loyalty + kin;
+  const total = loss + emphasis + valence + local + courting + record + loyalty + kin + character + mate + backers;
   if (!detail) return total;
-  Object.assign(parts, { policy: loss, emphasis, valence, local, courting, record, loyalty, kin, total });
+  Object.assign(parts, { policy: loss, emphasis, valence, local, courting, record, loyalty, kin, character, mate, backers, total, traits: ta.parts });
   return parts;
 }
 
@@ -283,6 +316,9 @@ export const FACTOR_LABELS = {
   record: "the government's record",
   loyalty: "party loyalty",
   kin: "home-region loyalty",
+  character: "personal traits",
+  mate: "the running mate",
+  backers: "lobby backing",
 };
 
 export function turnoutFor(ctx, group, utils, rng) {

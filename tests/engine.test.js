@@ -17,11 +17,11 @@ const election = (state, nation, ids, extra = {}) => openElection(state, nation,
 function toyNation() {
   const s = newState();
   const n = createNation(s, { name: "Toy", gov: "democracy" });
-  const mine = createRegion(s, n, { name: "Mines", population: 10000, power: 6, blocs: { miners: 80, laborers: 20 } });
-  const port = createRegion(s, n, { name: "Port", population: 4000, power: 3, blocs: { merchants: 70, sailors: 30 } });
+  const mine = createRegion(s, n, { name: "Mines", population: 10000, power: 6, blocs: { workers: 80, unions: 20 } });
+  const port = createRegion(s, n, { name: "Port", population: 4000, power: 3, blocs: { merchants: 70, capitalists: 30 } });
   const workers = createParty(s, n, { name: "Workers" });
   const traders = createParty(s, n, { name: "Traders" });
-  const labor = createPerson(s, n, { name: "Labor", partyId: workers.id, positions: { economy: -40, welfare: 60, labor: 80, environment: -50, infrastructure: 60 }, focus: ["labor"], targets: ["miners"] });
+  const labor = createPerson(s, n, { name: "Labor", partyId: workers.id, positions: { economy: -40, welfare: 60, labor: 80, environment: -50, infrastructure: 60 }, focus: ["labor"], targets: ["workers"] });
   const trade = createPerson(s, n, { name: "Trade", partyId: traders.id, positions: { economy: 70, welfare: -30, labor: -50, trade: 80, infrastructure: 40, settlers: 30 }, focus: ["trade"], targets: ["merchants"] });
   return { s, n, mine, port, labor, trade };
 }
@@ -33,7 +33,7 @@ test("voter groups follow their interests", () => {
   assert.equal(reg(mine.id).winner, 0, "miners back the labor candidate");
   assert.equal(reg(port.id).winner, 1, "the port backs the trade candidate");
   assert.equal(r.winnerIdx, 0, "bigger mining county carries the electors");
-  const miners = r.blocs.find((b) => b.id === "miners");
+  const miners = r.blocs.find((b) => b.id === "workers");
   assert.ok(miners.votes[0] / sum(miners.votes) > 0.75);
 });
 
@@ -225,4 +225,49 @@ test("player ballots are counted in their county", () => {
   e.ballots.Alex = { candidateId: trade.id, regionId: mine.id };
   const withBallot = computeElection(s, n, e, 1);
   assert.equal(withBallot.regions.find((r) => r.id === mine.id).votes[1] - base.regions.find((r) => r.id === mine.id).votes[1], 1000);
+});
+
+test("the people you choose matter: traits, running mates and backers", async () => {
+  const { groupOpinions } = await import("../packs/ElectoralBP/scripts/engine/dossier.js");
+  const s = newState();
+  const { n, cands } = buildNation(s, "democracy", 3);
+  const ada = cands[0];
+  const opinion = (g) => groupOpinions(s, n, ada.id).find((o) => o.blocId === g)?.approval ?? 0;
+  const vetsBefore = opinion("patriots");
+  ada.traits = ["warhero"];
+  assert.ok(opinion("patriots") > vetsBefore + 0.05, "a War Hero wins over patriots");
+  const relBefore = opinion("religious");
+  ada.traits = ["libertine"];
+  assert.ok(opinion("religious") < relBefore - 0.05, "a Free Spirit loses religious voters");
+  ada.traits = [];
+  const unionsBefore = opinion("unions");
+  const bizBefore = opinion("capitalists");
+  ada.backers = ["capitalists"];
+  assert.ok(opinion("capitalists") > bizBefore, "backers' members rally");
+  assert.ok(opinion("unions") < unionsBefore, "their rivals resent it");
+  ada.backers = [];
+  const mate = cands[2]; // devout, squeaky clean
+  const relNoMate = opinion("religious");
+  ada.runningMateId = mate.id;
+  assert.ok(opinion("religious") > relNoMate, "a devout running mate helps with religious voters");
+  const ops = groupOpinions(s, n, ada.id);
+  assert.ok(ops.length > 5 && ops.every((o) => Array.isArray(o.reasons)));
+  assert.ok(ops.some((o) => o.reasons.some((r) => r.text.startsWith("Running mate"))), "the dossier explains the running mate's effect");
+});
+
+test("corrupt candidates get caught more often", () => {
+  let corrupt = 0;
+  let clean = 0;
+  for (let seed = 1; seed <= 120; seed++) {
+    const s = newState();
+    const { n, cands } = buildNation(s, "democracy", seed);
+    cands[0].traits = ["corrupt"];
+    cands[1].traits = ["clean"];
+    const r = computeElection(s, n, election(s, n, cands.map((c) => c.id)), seed);
+    for (const e of r.dayEvents) {
+      if (e.type === "scandal" && e.text.includes("Ada")) corrupt++;
+      if (e.type === "scandal" && e.text.includes("Bram")) clean++;
+    }
+  }
+  assert.ok(corrupt > clean * 3, `corrupt ${corrupt} vs clean ${clean}`);
 });
