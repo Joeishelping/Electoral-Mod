@@ -32,6 +32,10 @@ export function createNation(state, { name, gov = "democracy", color = "§9" }) 
     election: null, // open election, taking ballots
     count: null, // election night in progress
     termEvents: [], // issues of the current term (war, recession...)
+    situations: [], // active and recent situations
+    record: [], // graded history of how situations were handled
+    groupMemory: {}, // how interest groups feel about the government's decisions
+    rulers: [], // players who run this nation (economy, situations, borders)
     history: [],
     electionCount: 0,
     approval: null,
@@ -131,7 +135,19 @@ export function relationKey(a, b) {
 }
 
 export function deleteNation(state, nationId) {
+  const nation = state.nations[nationId];
+  if (nation && state.map?.chunks) {
+    const keys = new Set([`n:${nationId}`, ...nation.regions.map((r) => r.id)]);
+    for (const [k, v] of Object.entries(state.map.chunks)) if (keys.has(v)) delete state.map.chunks[k];
+  }
+  if (state.disputes) state.disputes = state.disputes.filter((d) => d.originNationId !== nationId && !d.choices.some((c) => c.winner === nationId));
   delete state.nations[nationId];
+  for (const other of Object.values(state.nations)) {
+    for (const s of other.situations || []) {
+      if (s.otherId === nationId) s.otherId = null;
+      if (s.originNationId === nationId && s.status === "active") s.status = "expired";
+    }
+  }
   for (const [id, p] of Object.entries(state.persons)) if (p.nationId === nationId) delete state.persons[id];
   for (const key of Object.keys(state.relations)) if (key.split("|").includes(nationId)) delete state.relations[key];
   for (const [name, r] of Object.entries(state.residents)) if (r.nationId === nationId) delete state.residents[name];
@@ -157,6 +173,9 @@ export function normalizeState(state) {
   state.v = STATE_VERSION;
   state.seq = state.seq || 1;
   for (const key of ["nations", "persons", "relations", "residents"]) state[key] = state[key] || {};
+  state.map = state.map || { chunks: {} };
+  state.map.chunks = state.map.chunks || {};
+  state.disputes = state.disputes || [];
   delete state.houses;
   for (const nation of Object.values(state.nations)) {
     nation.metrics = { ...defaultMetrics(), ...(nation.metrics || {}) };
@@ -165,6 +184,10 @@ export function normalizeState(state) {
     for (const k of ["regions", "parties", "history"]) nation[k] = nation[k] || [];
     nation.count = nation.count || null;
     nation.termEvents = nation.termEvents || [];
+    nation.situations = nation.situations || [];
+    nation.record = nation.record || [];
+    nation.groupMemory = nation.groupMemory || {};
+    nation.rulers = nation.rulers || [];
     if (!["democracy", "parliament", "singleparty", "monarchy", "clan", "theocracy", "junta", "guild"].includes(nation.gov)) nation.gov = "democracy";
     if (nation.count && !nation.count.timeline) nation.count = null; // a count from an older version
     for (const k of ["cabinet", "cabinetPins", "deputyId", "heirId", "dynasty", "log"]) delete nation[k];

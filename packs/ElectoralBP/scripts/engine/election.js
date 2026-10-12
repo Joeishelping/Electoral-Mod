@@ -442,12 +442,17 @@ export function candidateSummary(state, nation, ids) {
 function dayMods(events, cands) {
   const day = { nat: {}, bloc: {}, region: {}, turnoutRegion: {}, turnoutBloc: {} };
   for (const e of events) {
-    const id = e.cand !== undefined ? cands[e.cand].id : null;
-    if (e.type === "scandal" || e.type === "debate" || e.type === "gaffe") day.nat[id] = (day.nat[id] || 0) + e.swing;
-    else if (e.type === "endorse") day.bloc[`${id}:${e.blocId}`] = e.swing;
-    else if (e.type === "ground") day.region[`${id}:${e.regionId}`] = e.swing;
-    else if (e.regionId) day.turnoutRegion[e.regionId] = (day.turnoutRegion[e.regionId] || 1) * e.turnout;
-    else if (e.blocId) day.turnoutBloc[e.blocId] = (day.turnoutBloc[e.blocId] || 1) * e.turnout;
+    const id = e.cand !== undefined ? cands[e.cand]?.id : null;
+    if (id && e.swing) {
+      if (e.blocId) day.bloc[`${id}:${e.blocId}`] = (day.bloc[`${id}:${e.blocId}`] || 0) + e.swing;
+      else if (e.regionId) day.region[`${id}:${e.regionId}`] = (day.region[`${id}:${e.regionId}`] || 0) + e.swing;
+      else day.nat[id] = (day.nat[id] || 0) + e.swing;
+    }
+    if (id && e.regionIds) for (const r of e.regionIds) day.region[`${id}:${r}`] = (day.region[`${id}:${r}`] || 0) + (e.regionSwing || 0);
+    if (e.turnout) {
+      if (e.blocId) day.turnoutBloc[e.blocId] = (day.turnoutBloc[e.blocId] || 1) * e.turnout;
+      else if (e.regionId) day.turnoutRegion[e.regionId] = (day.turnoutRegion[e.regionId] || 1) * e.turnout;
+    }
   }
   return day;
 }

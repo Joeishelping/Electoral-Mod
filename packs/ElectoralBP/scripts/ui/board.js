@@ -6,11 +6,14 @@ import { createNation, displayName, getPerson } from "../core/state.js";
 import { resetState, stateSize } from "../core/storage.js";
 import { STANCES, STANCE_BY_ID, getStance, setStance } from "../engine/diplomacy.js";
 import { confirm, modal, notice } from "./forms.js";
-import { announce, commit, isAdmin, loop, page, S } from "./nav.js";
+import { announce, canRun, commit, isAdmin, loop, page, S } from "./nav.js";
 import { nationSummary, regionProfile, statusLine } from "./render.js";
 import { castBallot, electionControl, historyMenu, liveResults, moodMenu, pollMenu, viewResult } from "./elections.js";
 import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, pickGovernment, settingsMenu, termMenu } from "./setup.js";
 import { interestGroupsPage } from "./dossier.js";
+import { openMap } from "./map.js";
+import { economyPage } from "./economy.js";
+import { activeCount, disputesMenu, openDisputes, situationsMenu } from "./situations.js";
 import { nightInProgress, startTheme, stopTheme } from "./ticker.js";
 import { world } from "@minecraft/server";
 
@@ -37,7 +40,13 @@ const HELP = [
   "",
   "§66. Election night§r (about 20 min) - results stream into chat with a live sidebar scoreboard. Election-day surprises, exit polls, lead changes, calls and recounts. Polls can be wrong!",
   "",
-  "§7Admins: operators, or /tag <player> add electoral_admin",
+  "§67. The world map§r - paint countries and cities onto the real world (Draw Borders), hand cities to other countries, and view it from no country's perspective or from one country's (home, allies, enemies, war fronts, situations).",
+  "",
+  "§68. Economy§r - taxes, tariffs and a budget (military, infrastructure, welfare, research, propaganda) drive GDP, the treasury, the performance sliders and how each interest group feels.",
+  "",
+  "§69. Situations§r - floods, strikes, resource strikes, invasions... strike your cities. Pick one of three responses (or do nothing) and a priority. Other countries get their own moves: help, exploit, or start a dispute that an admin rules on. Every outcome is graded, and challengers bring bad grades up in debates.",
+  "",
+  "§7Admins: operators, or /tag <player> add electoral_admin. Each country can also list Rulers who run its economy, situations and borders.",
 ].join("\n");
 
 export function nationView(player, nation) {
@@ -57,6 +66,9 @@ export function nationView(player, nation) {
         nation.history[0] && { text: "Last Results", icon: "textures/items/book_written", run: () => viewResult(player, nation, nation.history[0]) },
         nation.history.length > 1 && { text: "Past Elections", run: () => historyMenu(player, nation) },
         nation.leaderId && { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },
+        { text: `Situations${activeCount(nation) ? ` §c(${activeCount(nation)})` : ""}`, icon: "textures/items/blaze_powder", run: () => situationsMenu(player, nation) },
+        { text: "Economy", icon: "textures/items/gold_ingot", run: () => economyPage(player, nation) },
+        { text: "Map: Our View", icon: "textures/items/map_filled", run: () => openMap(player, nation.id) },
         nation.regions.length > 0 && { text: "Interest Groups", icon: "textures/items/name_tag", run: () => interestGroupsPage(player, nation) },
         nation.regions.length > 0 && {
           text: "Counties & Voters",
@@ -94,17 +106,18 @@ async function addNation(player) {
 
 // ---------- diplomacy ----------
 
-async function setRelation(player) {
+async function setRelation(player, fixed = null) {
   const nations = Object.values(S().nations);
-  const r = await modal(player, "Set Relation", [
-    { key: "a", type: "dropdown", label: "Nation", options: nations.map((n) => n.name) },
-    { key: "b", type: "dropdown", label: "and", options: nations.map((n) => n.name), value: 1 },
-    { key: "stance", type: "dropdown", label: "Relation", options: STANCES.map((s) => `${s.color}${s.name}`), value: 3 },
-  ], "Set");
+  const others = fixed ? nations.filter((n) => n.id !== fixed.id) : nations;
+  const fields = [];
+  if (!fixed) fields.push({ key: "a", type: "dropdown", label: "Nation", options: nations.map((n) => n.name) });
+  fields.push({ key: "b", type: "dropdown", label: fixed ? `${fixed.name}'s relation with` : "and", options: others.map((n) => n.name), value: fixed ? 0 : Math.min(1, others.length - 1) });
+  fields.push({ key: "stance", type: "dropdown", label: "Relation", options: STANCES.map((s) => `${s.color}${s.name}`), value: 3 });
+  const r = await modal(player, "Set Relation", fields, "Set");
   if (!r) return;
-  const a = nations[r.a];
-  const b = nations[r.b];
-  if (a.id === b.id) return notice(player, "Diplomacy", "Pick two different nations.");
+  const a = fixed || nations[r.a];
+  const b = others[r.b];
+  if (!a || !b || a.id === b.id) return notice(player, "Diplomacy", "Pick two different nations.");
   const stance = STANCES[r.stance];
   setStance(S(), a.id, b.id, stance.id);
   commit();
@@ -123,7 +136,37 @@ function diplomacyMenu(player) {
     return {
       title: "Diplomacy",
       body: lines.join("\n"),
-      options: [isAdmin(player) && { text: "§eSet a Relation", run: () => setRelation(player) }],
+      options: [
+        ...Object.values(state.nations).map((n) => ({
+          text: `${n.color}${n.name}\n§7${activeCount(n) ? `§c${activeCount(n)} situation(s)` : "§7calm"}`,
+          run: () => diplomacyNation(player, n),
+        })),
+        isAdmin(player) && { text: "§eSet a Relation", run: () => setRelation(player) },
+      ],
+    };
+  });
+}
+
+function diplomacyNation(player, nation) {
+  return loop(player, () => {
+    const state = S();
+    if (!state.nations[nation.id]) return null;
+    const rel = Object.values(state.nations).filter((o) => o.id !== nation.id).map((o) => {
+      const s = STANCE_BY_ID[[nation.id, o.id].sort().join("|") in state.relations ? state.relations[[nation.id, o.id].sort().join("|")] : "neutral"];
+      return ` ${o.color}${o.name}§r: ${s.color}${s.name}`;
+    });
+    const sits = (nation.situations || []).filter((s) => s.status === "active" || s.status === "ruling");
+    const lines = [`${nation.color}§l${nation.name}§r`, "", "§6Relations", ...(rel.length ? rel : [" §7No other countries."])];
+    if (sits.length) lines.push("", "§6Situations", ...sits.map((s) => ` §f${s.title}`));
+    return {
+      title: nation.name,
+      body: lines.join("\n"),
+      options: [
+        { text: `Situations${activeCount(nation) ? ` §c(${activeCount(nation)})` : ""}`, run: () => situationsMenu(player, nation) },
+        { text: "Map from Their View", run: () => openMap(player, nation.id) },
+        { text: "Economy", run: () => economyPage(player, nation) },
+        canRun(player, nation) && Object.keys(state.nations).length > 1 && { text: "Change Our Relations", run: () => setRelation(player, nation) },
+      ],
     };
   });
 }
@@ -147,7 +190,9 @@ export function openBoard(player) {
           return { text: `${n.color}${n.name}${tag}\n§7${GOV_BY_ID[n.gov]?.name}${leader ? ` · ${displayName(leader)}` : ""}`, run: () => nationView(player, n) };
         }),
         admin && { text: "§2+ Add a Nation", icon: "textures/items/banner_pattern", run: () => addNation(player) },
+        { text: "World Map", icon: "textures/items/map_filled", run: () => openMap(player, null) },
         nations.length > 1 && { text: "Diplomacy", icon: "textures/items/compass_item", run: () => diplomacyMenu(player) },
+        admin && openDisputes().length > 0 && { text: `§6Disputes & Rulings (${openDisputes().length})`, run: () => disputesMenu(player) },
         { text: "How It Works", icon: "textures/items/book_normal", run: () => page(player, "How It Works", HELP) },
         admin && {
           text: "§7Board Data",

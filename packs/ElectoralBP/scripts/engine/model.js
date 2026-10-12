@@ -31,6 +31,8 @@ import { clamp } from "../core/random.js";
 import { diplomacySummary } from "./diplomacy.js";
 import { TERM_EVENT_BY_ID } from "../data/events.js";
 import { traitAppeal, traitMoney } from "../data/traits.js";
+import { policyAppeal } from "./economy.js";
+import { GRADE_VALUE, termRecord } from "./situations.js";
 
 export const ADULT_SHARE = 0.72;
 const DEFAULT_SALIENCE = 0.2;
@@ -82,13 +84,27 @@ export function buildContext(state, nation, candidateIds = []) {
 
   const leader = getPerson(state, nation.leaderId);
   const avgUnrest = nation.regions.length ? nation.regions.reduce((s, r) => s + (r.unrest || 0), 0) / nation.regions.length : 0;
+  // How the government has actually governed: fiscal choices, remembered
+  // decisions, and the graded record of crises this term.
+  const governing = {};
+  for (const b of BLOCS) governing[b.id] = (nation.groupMemory?.[b.id] || 0) + policyAppeal(nation, b.id);
+  const record = termRecord(nation);
+  const handlingRegion = {};
+  let handlingNat = 0;
+  for (const r of record) {
+    const v = GRADE_VALUE[r.grade] ?? 0;
+    handlingNat += v * 0.35;
+    for (const id of r.regionIds || []) handlingRegion[id] = (handlingRegion[id] || 0) + v * 0.6;
+  }
+  handlingNat = clamp(handlingNat, -0.6, 0.6);
+
   const mates = {};
   for (const c of candidates) {
     const m = getPerson(state, c.runningMateId);
     if (m && m.id !== c.id) mates[c.id] = m;
   }
   return {
-    state, nation, gov, candidates, dip, natSal, metrics, incumbentBonus, mates,
+    state, nation, gov, candidates, dip, natSal, metrics, incumbentBonus, mates, governing, handlingNat, handlingRegion,
     day: null, // election-day modifiers, set by the election engine
     incumbentId: nation.leaderId,
     incumbentParty: leader ? leader.partyId : null,
@@ -275,11 +291,18 @@ export function utility(ctx, group, cand, detail = false) {
 
   // Record in office.
   let record = 0;
+  let governing = 0;
+  let handling = 0;
+  const share = cand.id === ctx.incumbentId ? 1 : ctx.incumbentParty && cand.partyId === ctx.incumbentParty ? 0.5 : 0;
   if (cand.id === ctx.incumbentId) {
     record += group.retro * 1.2 * W.retro + 0.12 - 0.08 * ctx.leaderTerms + ctx.incumbentBonus;
     if (ctx.dip.wars > 0) record += 0.15; // rally round the flag
-  } else if (ctx.incumbentParty && cand.partyId === ctx.incumbentParty) {
+  } else if (share) {
     record += group.retro * 0.6 * W.retro;
+  }
+  if (share && ctx.governing) {
+    for (const [g, w] of group.mix || []) governing += (ctx.governing[g] || 0) * w * share;
+    handling = (ctx.handlingNat + (group.region ? ctx.handlingRegion[group.region.id] || 0 : 0)) * share;
   }
 
   // Partisan loyalty and learned habits.
@@ -301,9 +324,9 @@ export function utility(ctx, group, cand, detail = false) {
     if (group.region) kin += day.region[`${cand.id}:${group.region.id}`] || 0;
   }
 
-  const total = loss + emphasis + valence + local + courting + record + loyalty + kin + character + mate + backers;
+  const total = loss + emphasis + valence + local + courting + record + loyalty + kin + character + mate + backers + governing + handling;
   if (!detail) return total;
-  Object.assign(parts, { policy: loss, emphasis, valence, local, courting, record, loyalty, kin, character, mate, backers, total, traits: ta.parts });
+  Object.assign(parts, { policy: loss, emphasis, valence, local, courting, record, loyalty, kin, character, mate, backers, governing, handling, total, traits: ta.parts });
   return parts;
 }
 
@@ -319,6 +342,8 @@ export const FACTOR_LABELS = {
   character: "personal traits",
   mate: "the running mate",
   backers: "lobby backing",
+  governing: "economic policy & decisions",
+  handling: "handling of crises",
 };
 
 export function turnoutFor(ctx, group, utils, rng) {

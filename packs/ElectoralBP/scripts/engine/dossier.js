@@ -34,7 +34,7 @@ export function groupOpinions(state, nation, personId) {
       if (Math.abs(vs) > 0.001) add(`issue:${id}`, vs);
     }
     for (const [t, v] of Object.entries(parts.traits || {})) add(`trait:${t}`, v);
-    for (const k of ["mate", "backers", "courting", "record", "loyalty", "local"]) if (parts[k]) add(k, parts[k]);
+    for (const k of ["mate", "backers", "courting", "record", "loyalty", "local", "governing", "handling"]) if (parts[k]) add(k, parts[k]);
     add("valence", parts.valence);
   }
   const label = (key) => {
@@ -53,6 +53,8 @@ export function groupOpinions(state, nation, personId) {
       loyalty: "Party loyalty",
       local: "Local ties",
       valence: "Personal appeal",
+      governing: "Economic policy & decisions",
+      handling: "Handling of crises",
     }[kind];
   };
   return Object.entries(agg)

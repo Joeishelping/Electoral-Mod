@@ -84,6 +84,8 @@ export function applyResult(state, nation, result) {
       }
     }
   }
+  // Interest groups slowly forgive and forget between terms.
+  for (const k of Object.keys(nation.groupMemory || {})) nation.groupMemory[k] = Math.round(nation.groupMemory[k] * 50) / 100;
   // A new term begins: the old term's events are now history.
   result.termEvents = (nation.termEvents || []).slice();
   nation.termEvents = [];

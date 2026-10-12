@@ -1,4 +1,5 @@
 import { TRAIT_BY_ID } from "./traits.js";
+import { termRecord } from "../engine/situations.js";
 
 // Things that happened during the current term. Admins toggle them on; they
 // change what voters care about and how they judge whoever is in office.
@@ -74,6 +75,30 @@ export function rollDayEvents(rng, nation, candidates, blocNames) {
     }, {})).sort((a, b) => b[1] - a[1]);
     if (groups.length && groups[0][1] > 0 && blocNames[groups[0][0]]) events.push({ type: "rally", blocId: groups[0][0], turnout: 1.3, text: `${name(i)}'s rallies have the ${blocNames[groups[0][0]]} fired up - they're flooding the polls.` });
   }
+  // The record in office: challengers attack bad crisis handling, the incumbent
+  // touts the good, and interest groups rally for or against the government.
+  const inc = idx.find((i) => candidates[i].id === nation.leaderId);
+  if (inc !== undefined) {
+    const rec = termRecord(nation);
+    const rank = { A: 0, B: 1, C: 2, D: 3, F: 4 };
+    const worst = rec.slice().sort((a, b) => rank[b.grade] - rank[a.grade])[0];
+    const best = rec.slice().sort((a, b) => rank[a.grade] - rank[b.grade])[0];
+    const challengers = idx.filter((i) => i !== inc);
+    if (worst && rank[worst.grade] >= 3 && challengers.length && rng.chance(0.85)) {
+      const ch = rng.pick(challengers);
+      events.push({ type: "attack", cand: inc, swing: -0.22, regionIds: worst.regionIds, regionSwing: -0.35, text: `${name(ch)} tore into ${name(inc)} over the botched response to the ${worst.title} in ${worst.cities} (grade ${worst.grade}).` });
+    }
+    if (best && rank[best.grade] <= 1 && rng.chance(0.75)) {
+      events.push({ type: "tout", cand: inc, swing: 0.15, regionIds: best.regionIds, regionSwing: 0.3, text: `${name(inc)} reminded voters how the government handled the ${best.title} in ${best.cities} (grade ${best.grade}).` });
+    }
+    const mem = Object.entries(nation.groupMemory || {}).filter(([g]) => blocNames[g]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    for (const [g, v] of mem.slice(0, 2)) {
+      if (Math.abs(v) < 0.3 || !rng.chance(0.7)) continue;
+      events.push(v > 0
+        ? { type: "endorse", cand: inc, blocId: g, swing: 0.3, turnout: 1.15, text: `The ${blocNames[g]} rallied behind ${name(inc)} for standing with them this term.` }
+        : { type: "endorse", cand: inc, blocId: g, swing: -0.35, turnout: 1.2, text: `The ${blocNames[g]} rallied against ${name(inc)} - they haven't forgotten this term's decisions.` });
+    }
+  }
   const table = [
     [0.45, () => { const r = pickRegion(); return { type: "storm", regionId: r.id, turnout: 0.78, text: `Heavy storms over ${r.name} kept many voters home.` }; }],
     [0.35, () => { const r = pickRegion(); return { type: "lines", regionId: r.id, turnout: 1.12, text: `Record lines in ${r.name} - turnout there is surging.` }; }],
@@ -82,5 +107,5 @@ export function rollDayEvents(rng, nation, candidates, blocNames) {
     [0.1, () => { const r = pickRegion(); return { type: "shortage", regionId: r.id, turnout: 0.85, text: `Ballot shortages slowed voting in ${r.name}.` }; }],
   ];
   for (const [p, make] of table) if (rng.chance(p)) events.push(make());
-  return rng.shuffle(events).slice(0, 5);
+  return rng.shuffle(events).slice(0, 6);
 }

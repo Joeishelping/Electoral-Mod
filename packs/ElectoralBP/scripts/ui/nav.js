@@ -39,6 +39,13 @@ export function isAdmin(player) {
   }
 }
 
+/** Admins, or players listed as rulers of this nation, can run it. */
+export function canRun(player, nation) {
+  if (isAdmin(player)) return true;
+  const me = player.name.toLowerCase();
+  return (nation?.rulers || []).some((n) => n.toLowerCase() === me);
+}
+
 export function announce(text) {
   try {
     world.sendMessage(text);

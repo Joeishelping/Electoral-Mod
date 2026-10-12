@@ -8,9 +8,10 @@ import { COLORS, COLOR_NAMES } from "../data/names.js";
 import { createParty, createPerson, deleteNation, deletePerson, displayName, nationPersons, personLabel } from "../core/state.js";
 import { clamp, createRng } from "../core/random.js";
 import { addRegionOfType, autoApportion, seedHistoricalLean } from "../engine/generate.js";
+import { reassign, transferRegion } from "../engine/territory.js";
 import { TERM_EVENTS } from "../data/events.js";
 import { confirm, fmt, menu, modal, notice } from "./forms.js";
-import { CLOSE, commit, loop, S } from "./nav.js";
+import { announce, CLOSE, commit, loop, S } from "./nav.js";
 import { metricsPage, personCard, regionProfile, stanceText } from "./render.js";
 import { dossierPage } from "./dossier.js";
 import { MAX_TRAITS, TRAITS, TRAIT_BY_ID } from "../data/traits.js";
@@ -283,11 +284,24 @@ function countyMenu(player, nation, region) {
             commit();
           },
         },
+        Object.keys(S().nations).length > 1 && {
+          text: "Give to Another Country",
+          run: async () => {
+            const others = Object.values(S().nations).filter((n) => n.id !== nation.id);
+            const r = await modal(player, `Give ${region.name} Away`, [{ key: "to", type: "dropdown", label: `Hand ${region.name} - its land, people and history - to:`, options: others.map((n) => n.name) }], "Give");
+            if (!r || !(await confirm(player, "Hand Over", `Give ${region.name} to ${others[r.to].name}?`, "§cGive it"))) return;
+            transferRegion(S(), region, others[r.to]);
+            commit();
+            announce(`§6[Borders]§r ${region.name} now belongs to ${others[r.to].color}${others[r.to].name}§r.`);
+            return "back";
+          },
+        },
         {
           text: "§cDelete County",
           run: async () => {
             if (!(await confirm(player, "Delete County", `Delete ${region.name}?`, "§cDelete"))) return;
             nation.regions = nation.regions.filter((x) => x !== region);
+            reassign(S(), region.id, `n:${nation.id}`); // its land stays with the country
             autoApportion(nation);
             commit();
             return "back";
@@ -495,6 +509,17 @@ export function settingsMenu(player, nation) {
           if (nation.election && !nation.count) nation.election = null;
           commit();
           player.sendMessage(`§a${nation.name} is now a ${GOV_BY_ID[gov].name}.`);
+        },
+      },
+      {
+        text: `Rulers\n§7${(nation.rulers || []).join(", ").slice(0, 40) || "admins only"}`,
+        run: async () => {
+          const r = await modal(player, "Rulers", [
+            { key: "names", type: "text", label: "Players who run this country (economy, situations, borders, relations). Separate names with commas.", placeholder: "Steve, Alex", value: (nation.rulers || []).join(", ") },
+          ]);
+          if (!r) return;
+          nation.rulers = r.names.split(",").map((x) => x.trim()).filter(Boolean);
+          commit();
         },
       },
       { text: "§7Voting Rules (advanced)", run: () => rules(player, nation) },

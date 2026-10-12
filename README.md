@@ -86,6 +86,54 @@ Every interest group in every county scores every candidate on:
 
 Votes then include random swings at the national, county and group level, plus that election's surprises. Results show why each county went the way it did, and how every group voted.
 
+## World map and borders
+
+Countries and their cities (counties) are painted onto the real Minecraft world, one chunk (16×16 blocks) at a time.
+
+- **Draw Borders** (Board Table → World Map): pick a brush (a country's city, the country's land outside any city, or Erase) and a radius. Then either:
+  - walk around with painting on, or
+  - mark two corners to fill a rectangle.
+
+  Admins can paint anywhere. A country's **Rulers** can paint unclaimed land and their own land.
+- **Give to Another Country** (on any county): the county moves with its land, people and voting history. Cities also change hands through situations and disputes.
+- **The map** draws with custom colored tiles from the resource pack. You can scroll, zoom (1 tile = 1 to 32 chunks), centre on yourself, show everything, jump to any country or city, and pick a size (Small for phones, Large for PC).
+  - **World view:** plain borders in each country's color. No markers or relationship colors.
+  - **A country's view:** home in green, allies blue, friends and trade partners aqua, rivals orange, enemies at war red with a striped front line, and that country's situations marked on the affected cities.
+
+## Economy
+
+Each country runs on economy turns (every 20 minutes by default; admins can run one immediately). Its counties produce GDP, which depends on:
+- what each county is (a Financial District out-produces Farm Country)
+- infrastructure and research levels
+- taxes, trade partners and tariffs
+- wars, unrest, debt and active situations
+
+The Economy screen has:
+- **Taxes & Tariffs:** income tax, business tax, tariffs, and a spending level (above 100% runs a deficit; debt accrues interest and drags GDP).
+- **Budget Allocation:** Military & Defense, Infrastructure, Welfare & Health, Research, Civic Propaganda. Each one builds up over time:
+  - Military wins wars and disputes.
+  - Infrastructure grows GDP and speeds crisis response.
+  - Welfare improves services and calms unrest.
+  - Research gives long-term growth.
+  - Propaganda buys calm at the cost of honesty.
+
+The economy drives the Leader Performance sliders automatically (you can switch that off). Interest groups react to fiscal choices: the Business Lobby hates business tax, unions and farmers like tariffs, veterans love a big military budget, and so on.
+
+High tariffs strain trade partners. A country deep in debt can no longer fund crisis responses properly.
+
+## Situations
+
+Situations strike a country's cities during economy turns, or an admin can trigger one. There are 44 of them, covering economy, disasters, health, unrest, crime, politics, the military, war and diplomacy. They fill in your own country and city names, for example: "Baza has uncovered a massive deposit of natural resources beneath Northvale."
+
+- **Responses:** each situation has its own three responses, plus **Do nothing**, and a **priority (0–5)** that costs money every turn. Neglected crises grow, escalate (an Outbreak becomes a Plague) and can spread to neighbouring cities on the map. Opportunities expire if ignored.
+- **Counter-situations:** other countries react with their own moves. When Baza finds the deposit, Gorgonzola can invest in a joint venture, seize the deposit, or undercut Baza's exports.
+  - Helping speeds Baza's recovery and improves relations.
+  - Exploiting costs Baza money.
+  - Escalating opens a **dispute**.
+- **Disputes and rulings:** you rule on who wins, or roll the dice using both countries' military strength. Battles, referendums and arbitration also wait for your ruling. The winner can take the city, and its land moves on the map. Rewards from a contested situation are held until the ruling.
+- **Grades:** every outcome gets a grade from A to F and goes on the country's **Crisis Record**, along with what every country did.
+- **Elections:** challengers tear into a badly handled crisis in debates, and incumbents tout the good ones. Affected counties swing for or against the incumbent. Interest groups remember which side the government took, and rally behind it or against it.
+
 ## Development
 
 ```
