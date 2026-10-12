@@ -11,6 +11,8 @@ import { nationSummary, regionProfile, statusLine } from "./render.js";
 import { castBallot, electionControl, historyMenu, liveResults, moodMenu, pollMenu, viewResult } from "./elections.js";
 import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, pickGovernment, settingsMenu, termMenu } from "./setup.js";
 import { interestGroupsPage } from "./dossier.js";
+import { nightInProgress, startTheme, stopTheme } from "./ticker.js";
+import { world } from "@minecraft/server";
 
 const HELP = [
   "§lHow the Board Table works§r",
@@ -153,6 +155,16 @@ export function openBoard(player) {
             title: "Board Data",
             body: `§7Saved data: ${(stateSize() / 1024).toFixed(1)} KB, ${nations.length} nation(s).`,
             options: [{
+              text: S().musicOff ? "Election Night Music: §cOFF" : "Election Night Music: §aON",
+              run: () => {
+                S().musicOff = !S().musicOff;
+                commit();
+                for (const p of world.getPlayers()) {
+                  if (S().musicOff) stopTheme(p);
+                  else if (nightInProgress()) startTheme(p);
+                }
+              },
+            }, {
               text: "§cErase Everything",
               run: async () => {
                 if (!(await confirm(player, "Erase Everything", "Delete every nation, candidate and election? This cannot be undone.", "§cErase"))) return;

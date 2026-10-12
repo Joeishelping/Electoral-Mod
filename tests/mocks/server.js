@@ -2,7 +2,7 @@
 
 const props = new Map();
 export const _messages = [];
-export const _hooks = { startup: [], scriptEvent: [], worldLoad: [], interval: [] };
+export const _hooks = { startup: [], scriptEvent: [], worldLoad: [], interval: [], playerSpawn: [] };
 export const _players = [];
 
 export const DisplaySlotId = { Sidebar: "sidebar", List: "list", BelowName: "belowname" };
@@ -35,7 +35,7 @@ export const world = {
   },
   sendMessage: (m) => _messages.push(m),
   getPlayers: ({ name } = {}) => _players.filter((p) => !name || p.name === name),
-  afterEvents: { worldLoad: { subscribe: (cb) => _hooks.worldLoad.push(cb) } },
+  afterEvents: { worldLoad: { subscribe: (cb) => _hooks.worldLoad.push(cb) }, playerSpawn: { subscribe: (cb) => _hooks.playerSpawn.push(cb) } },
 };
 
 export const system = {

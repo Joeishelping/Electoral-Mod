@@ -1,0 +1,9 @@
+{
+  "format_version": "1.14.0",
+  "sound_definitions": {
+    "electoral.night_theme": {
+      "category": "music",
+      "sounds": [{ "name": "sounds/electoral/night_theme", "stream": true, "volume": 0.7 }]
+    }
+  }
+}

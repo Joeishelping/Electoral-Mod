@@ -42,6 +42,7 @@ The night itself plays out differently for each government type:
 | **Guild Oligarchy** | Only the Business Lobby, merchants and the wealthy vote, weighted by their region's wealth. Exchanges report shares live and ranked-choice rounds settle it. Money talks. |
 
 During the night:
+- An **election-night theme** plays on loop for everyone, including players who join partway, and fades out when the winner is declared. Admins can turn it off under Board Data. The audio file isn't in this repository: put an `.ogg` at `packs/ElectoralRP/sounds/electoral/night_theme.ogg` before building.
 - A **sidebar scoreboard** shows electors, seats, vote share or council share.
 - The **action bar** shows live totals with the percentage counted.
 - Race calls and the winner flash **on screen** with a sound.

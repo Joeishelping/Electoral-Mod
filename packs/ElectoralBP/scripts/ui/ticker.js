@@ -14,6 +14,41 @@ let sidebarKey = "";
 let clearSidebarAt = 0;
 let rotate = 0;
 
+// ---------- election night theme ----------
+
+export const THEME = "electoral.night_theme";
+let musicOn = false;
+
+export function startTheme(player) {
+  if (getState().musicOff) return;
+  try {
+    player.playMusic(THEME, { loop: true, fade: 1, volume: 0.7 });
+  } catch {
+    try {
+      player.runCommand(`music play ${THEME} 0.7 1 loop`);
+    } catch {
+      // music unavailable
+    }
+  }
+}
+
+export function stopTheme(player) {
+  try {
+    player.stopMusic();
+  } catch {
+    try {
+      player.runCommand("music stop 2");
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** Is any nation in the middle of election night? */
+export function nightInProgress() {
+  return Object.values(getState().nations).some((n) => n.count);
+}
+
 function forPlayers(fn) {
   for (const p of world.getPlayers()) {
     try {
@@ -109,6 +144,14 @@ export function tick(now = Date.now()) {
     }
   } else if (sidebarShown && now >= clearSidebarAt) {
     clearSidebar();
+  }
+  // the theme loops for as long as any election night is running
+  if (live.length && !musicOn) {
+    musicOn = true;
+    forPlayers(startTheme);
+  } else if (!live.length && musicOn) {
+    musicOn = false;
+    forPlayers(stopTheme);
   }
   if (changed) commit();
 }

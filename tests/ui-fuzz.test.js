@@ -25,6 +25,15 @@ function makePlayer(rng, budget, admin = true) {
     hasTag: (t) => admin && t === "electoral_admin",
     onScreenDisplay: { setTitle: (t) => assert.doesNotMatch(String(t), BAD) },
     playSound: () => {},
+    music: null,
+    playMusic(track, opts) {
+      assert.equal(track, "electoral.night_theme");
+      assert.equal(opts.loop, true);
+      this.music = track;
+    },
+    stopMusic() {
+      this.music = null;
+    },
     sendMessage: (m) => assert.doesNotMatch(String(m), BAD, `message: ${m}`),
     async respond(form) {
       const texts = [form._title, form._body, ...(form.buttons || []), ...(form.fields || []).map((f) => f.label), ...(form.fields || []).flatMap((f) => f.items || [])];
@@ -70,6 +79,7 @@ test("main.js registers the block, script event and ticker", async () => {
   assert.equal(_hooks.scriptEvent.length, 1);
   for (const cb of _hooks.worldLoad) cb();
   assert.equal(_hooks.interval.length, 1);
+  assert.equal(_hooks.playerSpawn.length, 1);
 });
 
 test("random walks through every menu never crash", { timeout: 600000 }, async () => {
@@ -103,4 +113,28 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   for (const must of ["closed", "first returns", "RESULT"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
   for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government"]) assert.ok(titles.has(must), `reached screen: ${must}`);
   if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
+});
+
+test("the election-night theme loops during the night and stops after", async () => {
+  const { newState } = await import("../packs/ElectoralBP/scripts/core/state.js");
+  const { openElection } = await import("../packs/ElectoralBP/scripts/engine/election.js");
+  const { effectiveGov } = await import("../packs/ElectoralBP/scripts/data/governments.js");
+  const { beginCount } = await import("../packs/ElectoralBP/scripts/engine/night.js");
+  const state = getState();
+  for (const id of Object.keys(state.nations)) delete state.nations[id];
+  const { n, cands } = buildNation(state, "democracy", 7, "Music Test");
+  openElection(state, n, effectiveGov(n), { candidates: cands.map((c) => c.id) });
+  const listener = makePlayer(createRng(1), 0);
+  _players.length = 0;
+  _players.push(listener);
+  let t = Date.now();
+  beginCount(state, n, 5, t, 2);
+  tick(t);
+  assert.equal(listener.music, "electoral.night_theme", "the theme starts when the night begins");
+  tick((t += 60000));
+  assert.equal(listener.music, "electoral.night_theme", "still playing mid-night");
+  tick((t += 2 * 60000 + 1000));
+  assert.equal(n.count, null);
+  tick((t += 1000));
+  assert.equal(listener.music, null, "the theme stops when the night is over");
 });

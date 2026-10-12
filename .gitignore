@@ -1,2 +1,5 @@
 dist/
 node_modules/
+
+# Copyrighted audio supplied by the server owner: shipped in their build, not in the repo.
+packs/ElectoralRP/sounds/electoral/*.ogg

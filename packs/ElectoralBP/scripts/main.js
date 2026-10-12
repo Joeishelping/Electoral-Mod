@@ -4,7 +4,7 @@
 import { system, world } from "@minecraft/server";
 import { getState } from "./core/storage.js";
 import { openBoard } from "./ui/board.js";
-import { tick } from "./ui/ticker.js";
+import { nightInProgress, startTheme, tick } from "./ui/ticker.js";
 
 const open = new Set();
 
@@ -56,4 +56,14 @@ world.afterEvents.worldLoad.subscribe(() => {
       console.warn(`[Electoral] tick failed: ${e}`);
     }
   }, 20);
+});
+
+// Players who join (or respawn into the world) mid-night hear the theme too.
+world.afterEvents.playerSpawn.subscribe((event) => {
+  if (!event.initialSpawn) return;
+  try {
+    if (nightInProgress()) system.runTimeout(() => startTheme(event.player), 40);
+  } catch {
+    // ignore
+  }
 });
