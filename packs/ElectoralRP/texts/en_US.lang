@@ -1,1 +1,3 @@
 tile.electoral:board_table.name=Board Table
+item.electoral:map_brush=Map Brush
+entity.electoral:map_label.name=Map Label

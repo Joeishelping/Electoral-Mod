@@ -3,7 +3,8 @@
 // exploit, or escalate into a dispute that an admin rules on.
 //
 // Fillers: {country} owner, {city} affected city/cities, {other} the other country
-// involved, {lobby} an interest group, {leader} the leader's title.
+// involved, {othercity} one of the other country's cities, {lobby} an interest
+// group, {leader} the leader's title. All of them are the names players entered.
 // In counters: {country} is the reacting nation, {origin} the nation in trouble.
 //
 // Template fields
@@ -50,7 +51,7 @@ export const SCENARIOS = [
   },
   {
     id: "trade_offer", cat: "Diplomacy", kind: "opportunity", title: "Trade Agreement", needs: "other",
-    text: "{other} is offering {country} a sweeping trade agreement, signed in {city}.",
+    text: "Envoys from {other}'s {othercity} arrive in {city} offering {country} a sweeping trade agreement.",
     prefer: ["port", "market", "capital"], severity: 1,
     options: [
       o("Sign it as written", "Open markets on both sides.", { cost: 0.2, speed: 1.3, groups: { merchants: 0.3, capitalists: 0.2, workers: -0.15, farmers: -0.15 }, fx: { relation: 1, gdp: 0.03 } }),
@@ -147,7 +148,7 @@ export const SCENARIOS = [
   },
   {
     id: "investment", cat: "Economy", kind: "opportunity", title: "Foreign Buyout", needs: "other",
-    text: "Investors from {other} want to buy the great factories of {city}.",
+    text: "Investors from {other}'s {othercity} want to buy the great factories of {city}.",
     prefer: ["mining", "port", "market"], severity: 1,
     options: [
       o("Welcome the money", "Cash now, foreign owners later.", { cost: 0.2, speed: 1.3, groups: { capitalists: 0.2, patriots: -0.15 }, fx: { treasury: 0.1, relation: 1 } }),
@@ -382,7 +383,7 @@ export const SCENARIOS = [
   },
   {
     id: "refugees", cat: "Society", kind: "crisis", title: "Refugee Wave", escalated: "Border Crisis", needs: "other",
-    text: "Thousands of refugees fleeing {other} are arriving in {city}.",
+    text: "Thousands of refugees fleeing {other}'s {othercity} are arriving in {city}.",
     prefer: ["migrant", "port", "frontier"], severity: 2, growth: 0.4, gdp: 0.01, metrics: { services: -4 },
     options: [
       o("Welcome them", "Homes, jobs, a future.", { cost: 1, groups: { immigrants: 0.3, progressives: 0.2, patriots: -0.3 } }),
@@ -473,7 +474,7 @@ export const SCENARIOS = [
   // ---------------- military & war ----------------
   {
     id: "border_raid", cat: "Military", kind: "crisis", title: "Border Raid", escalated: "Border War", needs: "enemy",
-    text: "Raiders from {other} struck villages outside {city}.",
+    text: "Raiders from {other}'s {othercity} struck villages outside {city}.",
     prefer: ["frontier", "garrison", "farmland"], severity: 2, growth: 0.5, spread: 0.3, gdp: 0.03, metrics: { security: -6 },
     options: [
       o("Retaliate in force", "Hit them back harder.", { cost: 1.5, groups: { military: 0.2, patriots: 0.2, progressives: -0.15 }, fx: { relation: -1 } }),
@@ -482,7 +483,7 @@ export const SCENARIOS = [
     ],
     counter: {
       who: "other", title: "Accused of Raiding",
-      text: "{origin} accuses our raiders of attacking villages near {city}.",
+      text: "{origin} accuses raiders from our {othercity} of attacking villages near {city}.",
       options: [
         o("Deny it and apologise", "Smooth it over.", { cost: 0, groups: { patriots: -0.1 }, fx: { relation: 1 }, origin: { progress: 30 } }),
         o("Claim the raids were justified", "They had it coming.", { cost: 0, groups: { patriots: 0.1 }, fx: { relation: -1 } }),
@@ -492,7 +493,7 @@ export const SCENARIOS = [
   },
   {
     id: "invasion", cat: "War", kind: "crisis", title: "Invasion", escalated: "Siege", needs: "war", manual: true,
-    text: "{other} forces are advancing on {city}!",
+    text: "{other}'s forces are marching out of {othercity} toward {city}!",
     prefer: ["frontier", "garrison"], severity: 3, growth: 0.5, gdp: 0.08, metrics: { security: -10, economy: -3 },
     options: [
       o("Throw everything into the defense", "Every soldier, every rifle.", { cost: 3, groups: { military: 0.2, patriots: 0.2 }, fx: { stock: { military: 0.05 } } }),
@@ -501,7 +502,7 @@ export const SCENARIOS = [
     ],
     counter: {
       who: "other", title: "Offensive",
-      text: "Our forces are closing in on {origin}'s {city}.",
+      text: "Our forces from {othercity} are closing in on {origin}'s {city}.",
       options: [
         o("Press the attack", "Take the city. The admin rules on the battle.", { contest: "city", groups: { patriots: 0.2, progressives: -0.2 } }),
         o("Demand {city} in exchange for peace", "Take it at the negotiating table.", { contest: "city", groups: { patriots: 0.1 } }),
@@ -511,7 +512,7 @@ export const SCENARIOS = [
   },
   {
     id: "spies", cat: "Military", kind: "crisis", title: "Spy Ring", escalated: "Espionage Scandal", needs: "other",
-    text: "A spy ring working for {other} was uncovered in {city}.",
+    text: "A spy ring run from {other}'s {othercity} was uncovered in {city}.",
     prefer: ["capital", "garrison", "academy"], severity: 1, growth: 0.4, gdp: 0.01, metrics: { security: -4 },
     options: [
       o("Public show trial", "Make an example of them.", { cost: 0.4, groups: { patriots: 0.2, libertarians: -0.1 }, fx: { relation: -1 } }),
@@ -530,7 +531,7 @@ export const SCENARIOS = [
   },
   {
     id: "buildup", cat: "Military", kind: "crisis", title: "Troops on the Border", escalated: "War Scare", needs: "enemy",
-    text: "{other} is massing troops near {city}.",
+    text: "{other} is massing troops in {othercity}, just across from {city}.",
     prefer: ["frontier", "garrison"], severity: 2, growth: 0.5, gdp: 0.02, metrics: { security: -5 },
     options: [
       o("Match their buildup", "Show strength.", { cost: 2, groups: { military: 0.2, patriots: 0.15, progressives: -0.15 }, fx: { stock: { military: 0.1 } } }),
@@ -539,7 +540,7 @@ export const SCENARIOS = [
     ],
     counter: {
       who: "other", title: "Accused of Aggression",
-      text: "{origin} says our troops are massing near {city}.",
+      text: "{origin} says our troops in {othercity} are massing near {city}.",
       options: [
         o("Pull the troops back", "De-escalate.", { cost: 0, groups: { patriots: -0.1, progressives: 0.1 }, fx: { relation: 1 }, origin: { progress: 40 } }),
         o("Hold the line", "Our soldiers stay where they are.", { cost: 0.01, groups: { patriots: 0.1 } }),
@@ -549,7 +550,7 @@ export const SCENARIOS = [
   },
   {
     id: "war_chest", cat: "War", kind: "crisis", title: "Empty War Chest", escalated: "War Bankruptcy", needs: "war",
-    text: "The war against {other} is draining {country}'s treasury.",
+    text: "The war against {other} is draining {country}'s treasury, and {city} is feeling it most.",
     prefer: ["capital"], severity: 2, growth: 0.4, gdp: 0.02, metrics: { economy: -4 },
     options: [
       o("Sell war bonds", "Borrow from patriots.", { cost: 0.2, groups: { wealthy: 0.1, patriots: 0.1 }, fx: { treasury: 0.08 } }),
@@ -571,7 +572,7 @@ export const SCENARIOS = [
   // ---------------- diplomacy ----------------
   {
     id: "insult", cat: "Diplomacy", kind: "crisis", title: "Diplomatic Insult", escalated: "Diplomatic Rupture", needs: "other",
-    text: "{other}'s ambassador insulted {country} at a banquet in {city}.",
+    text: "The ambassador from {other}'s {othercity} insulted {country} at a banquet in {city}.",
     prefer: ["capital"], severity: 1, growth: 0.3, gdp: 0, metrics: {},
     options: [
       o("Demand an apology", "Firm but fair.", { cost: 0.1, groups: { patriots: 0.15 } }),
@@ -590,7 +591,7 @@ export const SCENARIOS = [
   },
   {
     id: "pact", cat: "Diplomacy", kind: "opportunity", title: "Alliance Offer", needs: "other",
-    text: "{other} proposes a defensive alliance with {country}, to be signed in {city}.",
+    text: "{other} proposes a defensive alliance with {country}. Envoys from {othercity} wait in {city} for an answer.",
     prefer: ["capital"], severity: 1,
     options: [
       o("Sign the alliance", "Stand together.", { cost: 0.2, groups: { military: 0.1, progressives: 0.05 }, fx: { relation: 2 } }),
@@ -600,7 +601,7 @@ export const SCENARIOS = [
   },
   {
     id: "hostages", cat: "Diplomacy", kind: "crisis", title: "Citizens Detained", escalated: "Hostage Crisis", needs: "other",
-    text: "Citizens of {country} from {city} have been detained in {other}.",
+    text: "Citizens of {country} from {city} have been detained in {other}'s {othercity}.",
     prefer: [], severity: 2, growth: 0.4, gdp: 0, metrics: { security: -3 },
     options: [
       o("Pay the ransom", "Bring them home, whatever it costs.", { cost: 1, speed: 1.3, groups: { patriots: -0.15, retirees: 0.05 } }),
@@ -619,7 +620,7 @@ export const SCENARIOS = [
   },
   {
     id: "aid_request", cat: "Diplomacy", kind: "opportunity", title: "Plea for Aid", needs: "other",
-    text: "{other} begs {country} for emergency aid. The request arrives in {city}.",
+    text: "Disaster has struck {other}'s {othercity}. Their envoys arrive in {city} begging {country} for emergency aid.",
     prefer: ["capital", "port"], severity: 1,
     options: [
       o("Send generous aid", "Be the friend they need.", { cost: 0.5, groups: { progressives: 0.15, patriots: -0.1 }, fx: { treasury: -0.04, relation: 1 } }),
@@ -629,7 +630,7 @@ export const SCENARIOS = [
   },
   {
     id: "border_claim", cat: "Diplomacy", kind: "crisis", title: "Border Claim", escalated: "Territorial Standoff", needs: "other",
-    text: "{other} claims that {city} rightfully belongs to them.",
+    text: "{other} claims that {city} rightfully belongs to them, and has stationed officials in nearby {othercity}.",
     prefer: ["frontier", "forest", "farmland"], severity: 2, growth: 0.4, gdp: 0.01, metrics: { security: -3 },
     options: [
       o("Reject the claim", "Not one inch.", { cost: 0.3, groups: { patriots: 0.2 }, fx: { relation: -1 } }),

@@ -6,6 +6,7 @@ import { createRng, hashSeed } from "../core/random.js";
 import { ensureEconomy } from "../engine/economy.js";
 import { runNationTurn } from "../engine/turns.js";
 import { paintTick } from "./map.js";
+import { exploreTick, renderAll } from "./wartable.js";
 import { beginCount, liveView, tickNight } from "../engine/night.js";
 import { getState } from "../core/storage.js";
 import { announce, commit } from "./nav.js";
@@ -101,6 +102,7 @@ function clearSidebar() {
 }
 
 let mapDirty = false;
+let lastTableRefresh = 0;
 let lastMapSave = 0;
 const turnRng = createRng(hashSeed("turns", Date.now()));
 
@@ -113,6 +115,13 @@ export function tick(now = Date.now()) {
     mapDirty = false;
     lastMapSave = now;
     changed = true;
+    renderAll();
+  }
+  // map the land around players; keep War Tables in step with the world
+  exploreTick(now);
+  if (now - lastTableRefresh > 10000) {
+    lastTableRefresh = now;
+    renderAll();
   }
   // economy turns: situations progress, money moves, new situations strike
   for (const nation of Object.values(state.nations)) {

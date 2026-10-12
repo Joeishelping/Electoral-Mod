@@ -1,0 +1,14 @@
+{
+  "format_version": "1.20.10",
+  "minecraft:recipe_shaped": {
+    "description": { "identifier": "electoral:map_brush" },
+    "tags": ["crafting_table"],
+    "pattern": [" F", "S "],
+    "key": {
+      "F": { "item": "minecraft:feather" },
+      "S": { "item": "minecraft:stick" }
+    },
+    "unlock": [{ "item": "minecraft:feather" }],
+    "result": { "item": "electoral:map_brush" }
+  }
+}

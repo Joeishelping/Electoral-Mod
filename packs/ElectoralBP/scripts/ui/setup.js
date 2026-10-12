@@ -207,11 +207,12 @@ export function candidatesMenu(player, nation) {
 
 async function addCounty(player, nation) {
   const r = await modal(player, "Add County", [
-    { key: "name", type: "text", label: "Name (leave blank for a random name)", placeholder: "County name", value: "" },
+    { key: "name", type: "text", label: "Name §c(required)", placeholder: "Type the county / city name", value: "" },
     { key: "type", type: "dropdown", label: "What kind of place is it? (decides which interest groups live there)", options: REGION_TEMPLATES.map((t) => t.name) },
     { key: "pop", type: "text", label: "Population (leave blank for typical)", placeholder: "e.g. 5000", value: "" },
   ], "Add");
   if (!r) return;
+  if (!r.name.trim()) return notice(player, "Name needed", "Give the county a name - situations and results use the names you choose.");
   const region = addRegionOfType(S(), nation, rng(), REGION_TEMPLATES[r.type].id, r.name);
   const pop = int(r.pop, 0);
   if (pop > 0) {

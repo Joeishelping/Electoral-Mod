@@ -5,6 +5,8 @@ import { system, world } from "@minecraft/server";
 import { getState } from "./core/storage.js";
 import { openBoard } from "./ui/board.js";
 import { nightInProgress, startTheme, tick } from "./ui/ticker.js";
+import { brushOn, renderAll } from "./ui/wartable.js";
+import { chooseBrush } from "./ui/map.js";
 
 const open = new Set();
 
@@ -26,7 +28,19 @@ async function openFor(player) {
   }
 }
 
-system.beforeEvents.startup.subscribe(({ blockComponentRegistry }) => {
+system.beforeEvents.startup.subscribe(({ blockComponentRegistry, itemComponentRegistry }) => {
+  // The Map Brush: right-click the air to pick what to paint, right-click a War Table square to paint it.
+  itemComponentRegistry.registerCustomComponent("electoral:map_brush", {
+    onUse(event) {
+      const player = event.source;
+      if (player) system.run(() => chooseBrush(player).catch(() => {}));
+    },
+    onUseOn(event) {
+      const player = event.source;
+      const block = event.block;
+      if (player && block) system.run(() => brushOn(player, block));
+    },
+  });
   blockComponentRegistry.registerCustomComponent("electoral:board_table", {
     onPlayerInteract(event) {
       const player = event.player;
@@ -49,6 +63,7 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
 
 world.afterEvents.worldLoad.subscribe(() => {
   getState();
+  system.runTimeout(() => renderAll(true), 100); // rebuild War Tables after a restart
   system.runInterval(() => {
     try {
       tick();

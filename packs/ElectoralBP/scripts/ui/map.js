@@ -1,23 +1,16 @@
-// The World Map: borders painted onto the real world, viewed from no country's
-// perspective (plain borders) or from one country's (home / allies / hostile /
-// war fronts / situation markers). Plus the border-drawing tools.
+// World Map control centre: War Tables (block maps built in the world), the Map
+// Brush, and walk-around border painting.
 
-import { GLYPH, tile } from "../data/glyphs.js";
 import { STANCES } from "../engine/diplomacy.js";
-import { SCENARIO_BY_ID } from "../data/scenarios.js";
-import { bounds, chunkOf, fillRect, landStats, ownerAt, ownerIndex, paintSquare, renderMap } from "../engine/territory.js";
-import { modal, notice } from "./forms.js";
+import { bounds, chunkOf, fillRect, landStats, ownerAt, ownerIndex, paintSquare } from "../engine/territory.js";
+import { TABLE_SIZES, ZOOMS } from "../engine/wartable.js";
+import { TERRAIN } from "../data/mapblocks.js";
+import { getTerrain } from "../core/storage.js";
+import { confirm, modal, notice } from "./forms.js";
 import { canRun, CLOSE, commit, isAdmin, loop, S } from "./nav.js";
+import { brushes, buildTable, giveBrush, nearestTable, removeTable, renderTable, scanAround, tables } from "./wartable.js";
 
-const SIZES = [
-  { name: "Small (phone)", w: 17, h: 10 },
-  { name: "Medium", w: 25, h: 13 },
-  { name: "Large (PC)", w: 33, h: 17 },
-];
-const ZOOMS = [1, 2, 4, 8, 16, 32];
-const views = new Map(); // player id -> view settings
-
-// Active painting sessions: player id -> { target, nationId, radius, all, count }
+// Walk-to-paint sessions: player id -> { target, label, radius, walking, corner, count }
 export const paintSessions = new Map();
 
 function playerChunk(player) {
@@ -29,209 +22,247 @@ function playerChunk(player) {
   }
 }
 
-function viewFor(player) {
-  let v = views.get(player.id);
-  if (!v) {
-    const here = playerChunk(player) || [0, 0];
-    v = { cx: here[0], cz: here[1], zoom: 2, size: 1, persp: null };
-    views.set(player.id, v);
-  }
-  return v;
-}
-
-/** Can this player paint over this owner key? Admins can paint anything. */
 export function painterFor(player, state) {
   const admin = isAdmin(player);
-  const mine = new Set(Object.values(state.nations).filter((n) => canRun(player, n)).map((n) => n.id));
   const idx = ownerIndex(state);
-  return { admin, mine, canPaint: (old) => admin || (idx[old] && mine.has(idx[old].nation.id)) };
+  return { admin, canPaint: (old) => admin || (idx[old] && canRun(player, idx[old].nation)) };
 }
-
-function activeMarkers(state, nation) {
-  const markers = {};
-  for (const s of nation.situations || []) {
-    if (s.kind !== "situation" || (s.status !== "active" && s.status !== "ruling")) continue;
-    const level = SCENARIO_BY_ID[s.tpl]?.kind === "opportunity" ? "opportunity" : s.severity >= 4 ? 2 : s.severity >= 2.5 ? 1 : 0;
-    for (const id of s.regionIds) {
-      const cur = markers[id];
-      if (cur === undefined || cur === "opportunity" || (typeof level === "number" && level > cur)) markers[id] = level;
-    }
-  }
-  return markers;
-}
-
-function legend(state, v) {
-  const lines = [];
-  if (!v.persp) {
-    const stats = landStats(state);
-    for (const n of Object.values(state.nations)) {
-      const land = (stats[`n:${n.id}`] || 0) + n.regions.reduce((s, r) => s + (stats[r.id] || 0), 0);
-      if (land) lines.push(`${tile(n.color)} ${n.color}${n.name}§7 - ${land} chunks`);
-    }
-    lines.push(`${GLYPH.wild} §7Unclaimed   ${GLYPH.you} §7You`);
-    return lines;
-  }
-  const nation = state.nations[v.persp];
-  lines.push(`${tile("§a")} §aHome   ${tile("§9")} §9Allies   ${tile("§b")} §bFriends/Trade   ${tile("§7")} §7Neutral`);
-  lines.push(`${tile("§6")} §6Rivals/Tense   ${tile("§c")} §cAt war   ${GLYPH.front} §4Front line   ${GLYPH.you} §7You`);
-  const rel = Object.values(state.nations).filter((o) => o.id !== nation.id).map((o) => {
-    const key = [nation.id, o.id].sort().join("|");
-    const s = STANCES.find((x) => x.id === (state.relations[key] || "neutral"));
-    return `${s.color}${o.name}§7 (${s.name})`;
-  });
-  if (rel.length) lines.push(`§7Relations: ${rel.join(", ")}`);
-  const sits = (nation.situations || []).filter((s) => s.kind === "situation" && (s.status === "active" || s.status === "ruling"));
-  if (sits.length) {
-    lines.push(`${GLYPH.situation[0]}${GLYPH.situation[1]}${GLYPH.situation[2]} §eSituations:`);
-    for (const s of sits) lines.push(` §f${s.title}§7 in ${s.regionIds.map((id) => nation.regions.find((r) => r.id === id)?.name).filter(Boolean).join(", ")}`);
-  }
-  return lines;
-}
-
-function centerOn(state, v, owners) {
-  const b = bounds(state, owners);
-  if (!b) return false;
-  v.cx = Math.round((b[0] + b[2]) / 2);
-  v.cz = Math.round((b[1] + b[3]) / 2);
-  const size = SIZES[v.size];
-  const span = Math.max((b[2] - b[0] + 1) / (size.w - 2), (b[3] - b[1] + 1) / (size.h - 2));
-  v.zoom = ZOOMS.find((z) => z >= span) || 32;
-  return true;
-}
-
-export function openMap(player, perspective = undefined) {
-  const v = viewFor(player);
-  if (perspective !== undefined) {
-    v.persp = perspective;
-    const n = S().nations[perspective];
-    if (n) centerOn(S(), v, new Set([`n:${n.id}`, ...n.regions.map((r) => r.id)]));
-  }
-  return loop(player, () => {
-    const state = S();
-    if (v.persp && !state.nations[v.persp]) v.persp = null;
-    const size = SIZES[v.size];
-    const persp = v.persp ? state.nations[v.persp] : null;
-    const here = playerChunk(player);
-    const rows = renderMap(state, { cx: v.cx, cz: v.cz, zoom: v.zoom, w: size.w, h: size.h, persp: v.persp, you: here, markers: persp ? activeMarkers(state, persp) : null });
-    const empty = !Object.keys(state.map?.chunks || {}).length;
-    const body = [
-      `§l${persp ? `${persp.color}${persp.name}§r§l's view` : "World Map"}§r §7- 1 tile = ${v.zoom}x${v.zoom} chunks · centre ${v.cx * 16}, ${v.cz * 16}`,
-      ...rows,
-      ...legend(state, v),
-    ];
-    if (empty) body.push("", "§eNo borders drawn yet. Use Draw Borders to paint countries and cities onto the world.");
-    const step = Math.max(1, Math.floor(size.w / 3)) * v.zoom;
-    const stepZ = Math.max(1, Math.floor(size.h / 3)) * v.zoom;
-    return {
-      title: persp ? `${persp.name} - Map` : "World Map",
-      body: body.join("\n"),
-      options: [
-        { text: "^ North", run: () => { v.cz -= stepZ; } },
-        { text: "v South", run: () => { v.cz += stepZ; } },
-        { text: "< West", run: () => { v.cx -= step; } },
-        { text: "> East", run: () => { v.cx += step; } },
-        { text: "+ Zoom In", run: () => { v.zoom = ZOOMS[Math.max(0, ZOOMS.indexOf(v.zoom) - 1)]; } },
-        { text: "- Zoom Out", run: () => { v.zoom = ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(v.zoom) + 1)]; } },
-        here && { text: "Centre on Me", run: () => { [v.cx, v.cz] = here; } },
-        { text: "Show Everything", run: () => { centerOn(state, v, null); } },
-        { text: "Jump to a Country or City", run: () => jumpTo(player, v) },
-        { text: `View: ${persp ? persp.name : "World (no country)"}`, run: () => pickPerspective(player, v) },
-        { text: `Map Size: ${size.name}`, run: () => { v.size = (v.size + 1) % SIZES.length; } },
-        (isAdmin(player) || Object.values(state.nations).some((n) => canRun(player, n))) && { text: "§eDraw Borders", run: () => drawMenu(player) },
-      ],
-    };
-  });
-}
-
-async function jumpTo(player, v) {
-  const state = S();
-  const targets = [];
-  for (const n of Object.values(state.nations)) {
-    targets.push({ label: n.name, owners: new Set([`n:${n.id}`, ...n.regions.map((r) => r.id)]) });
-    for (const r of n.regions) targets.push({ label: `  ${r.name} (${n.name})`, owners: new Set([r.id]) });
-  }
-  if (!targets.length) return notice(player, "Jump", "There are no countries yet.");
-  const r = await modal(player, "Jump To", [{ key: "t", type: "dropdown", label: "Where?", options: targets.map((t) => t.label.slice(0, 60)) }], "Go");
-  if (!r) return;
-  if (!centerOn(state, v, targets[r.t].owners)) await notice(player, "Jump", `${targets[r.t].label.trim()} has no land drawn yet.`);
-}
-
-async function pickPerspective(player, v) {
-  const nations = Object.values(S().nations);
-  const r = await modal(player, "Whose View?", [
-    { key: "p", type: "dropdown", label: "World view shows plain borders. A country's view shows home, allies, enemies, war fronts and its situations.", options: ["World (no country)", ...nations.map((n) => n.name)], value: Math.max(0, nations.findIndex((n) => n.id === v.persp) + 1) },
-  ], "View");
-  if (!r) return;
-  v.persp = r.p === 0 ? null : nations[r.p - 1].id;
-}
-
-// ---------- drawing borders ----------
 
 function paintTargets(player, state) {
   const out = [];
   for (const n of Object.values(state.nations)) {
     if (!canRun(player, n)) continue;
-    out.push({ label: `${n.name} - land outside any city`, key: `n:${n.id}`, nationId: n.id });
-    for (const r of n.regions) out.push({ label: `${n.name} - ${r.name}`, key: r.id, nationId: n.id });
+    out.push({ label: `${n.name} - land outside any city`, key: `n:${n.id}` });
+    for (const r of n.regions) out.push({ label: `${n.name} - ${r.name}`, key: r.id });
   }
-  out.push({ label: "Erase (unclaimed)", key: null, nationId: null });
+  out.push({ label: "Erase (unclaimed)", key: null });
   return out;
 }
 
-export function drawMenu(player) {
+const LEGEND = [
+  "§6How to read the table",
+  " §fSolid colour§7 = a country's land · §fwool§7 = borders between cities",
+  " §fRedstone§7 = a war front · §fTorch / lantern / redstone torch§7 = minor / serious / critical situation · §fEnd rod§7 = opportunity",
+  ` §7Terrain: ${Object.values(TERRAIN).map((t) => t.name).join(", ")} · §8dark tiles§7 = unexplored`,
+];
+
+function relationsText(state, nation) {
+  return Object.values(state.nations).filter((o) => o.id !== nation.id).map((o) => {
+    const s = STANCES.find((x) => x.id === (state.relations[[nation.id, o.id].sort().join("|")] || "neutral"));
+    return `${s.color}${o.name}§7 (${s.name})`;
+  }).join(", ");
+}
+
+/** Board Table -> World Map. `perspective` (a nation id) opens the nearest table in that view. */
+export function openMap(player, perspective = undefined) {
+  if (perspective !== undefined) {
+    const t = nearestTable(player);
+    if (t) {
+      t.persp = perspective;
+      centerOnOwners(S(), t, perspective ? ownersOf(S().nations[perspective]) : null);
+      commit();
+      renderTable(t);
+      return tableMenu(player, t);
+    }
+  }
   return loop(player, () => {
     const state = S();
-    let sess = paintSessions.get(player.id);
-    const here = playerChunk(player);
-    const idx = ownerIndex(state);
-    if (sess && sess.target && !idx[sess.target]) {
-      paintSessions.delete(player.id); // its country or city is gone
-      sess = null;
-    }
-    const owner = here ? ownerAt(state, here[0], here[1]) : null;
+    const stats = landStats(state);
+    const explored = Object.keys(getTerrain()).length;
     const lines = [
-      "§7Borders are painted onto the real world one chunk (16x16 blocks) at a time.",
-      "§7Pick what to paint, then walk around while painting is on, or mark two corners to fill a rectangle.",
+      "§7The War Table is a map of your world built out of blocks on the floor. It shows the real terrain players have explored, and the borders of every country and city.",
       "",
-      here ? `§7You are in chunk §f${here[0]}, ${here[1]}§7 - owned by §f${owner && idx[owner] ? (idx[owner].region ? `${idx[owner].region.name} (${idx[owner].nation.name})` : idx[owner].nation.name) : "nobody"}` : "§cGo to the Overworld to draw borders.",
+      `§7Explored: §f${explored}§7 chunks · Claimed: §f${Object.values(stats).reduce((a, b) => a + b, 0)}§7 chunks`,
     ];
-    if (sess) lines.push(`§aPainting ON:§f ${sess.label} §7(radius ${sess.radius}, ${sess.count} chunks so far)`);
-    if (sess?.corner) lines.push(`§eCorner 1 set at chunk ${sess.corner[0]}, ${sess.corner[1]}`);
+    for (const n of Object.values(state.nations)) {
+      const land = (stats[`n:${n.id}`] || 0) + n.regions.reduce((s, r) => s + (stats[r.id] || 0), 0);
+      lines.push(` ${n.color}${n.name}§7 - ${land} chunks`);
+    }
+    if (!tables().length) lines.push("", isAdmin(player) ? "§eNo War Table yet. Stand in the middle of a big empty floor and build one." : "§7No War Table has been built yet.");
     return {
-      title: "Draw Borders",
+      title: "World Map",
       body: lines.join("\n"),
       options: [
-        { text: sess ? `Brush: ${sess.label.slice(0, 40)}` : "Choose What to Paint", run: () => chooseBrush(player) },
-        sess && !sess.walking && here && { text: "§aStart Painting as I Walk", run: () => { sess.walking = true; player.sendMessage("§aPainting as you walk. Open the Board Table and choose Stop Painting when done."); return CLOSE; } },
-        sess && sess.walking && { text: "§cStop Painting", run: () => { sess.walking = false; commit(); } },
-        sess && here && { text: "Paint Where I Stand", run: () => paintHere(player, sess, here) },
-        sess && here && { text: sess.corner ? "Fill Rectangle to Here (corner 2)" : "Set Corner 1 Here", run: () => corner(player, sess, here) },
-        sess && { text: "§7Put the Brush Away", run: () => { paintSessions.delete(player.id); commit(); } },
+        ...tables().map((t) => ({ text: `War Table at ${t.x0 + Math.floor(t.w / 2)}, ${t.y + 1}, ${t.z0 + Math.floor(t.h / 2)}\n§7${t.persp && state.nations[t.persp] ? `${state.nations[t.persp].name}'s view` : "World view"} · zoom ${t.zoom}`, run: () => tableMenu(player, t) })),
+        isAdmin(player) && { text: "§eBuild a War Table Here", run: () => buildHere(player) },
+        { text: "Get a Map Brush", run: () => { player.sendMessage(giveBrush(player) ? "§aYou got a Map Brush. Right-click the air to choose what to paint, then right-click squares on a War Table." : "§cYour inventory is full."); } },
+        { text: brushes.get(player.id) ? `Brush: ${brushes.get(player.id).label.slice(0, 40)}` : "Choose What to Paint", run: () => chooseBrush(player) },
+        { text: "Paint by Walking Around", run: () => walkMenu(player) },
+        isAdmin(player) && { text: "§7Map the Terrain Around Me", run: () => { scanAround(player); player.sendMessage("§7Mapping loaded chunks around you..."); } },
       ],
     };
   });
 }
 
-async function chooseBrush(player) {
+async function buildHere(player) {
+  if (player.dimension?.id !== "minecraft:overworld") return notice(player, "War Table", "Build War Tables in the Overworld.");
+  const r = await modal(player, "Build a War Table", [
+    { key: "s", type: "dropdown", label: "Size (blocks). It is built on the floor under your feet, centred on you. The floor blocks and anything standing on them will be replaced.", options: TABLE_SIZES.map((x) => x.name), value: 1 },
+  ], "Build");
+  if (!r) return;
+  if (!(await confirm(player, "Build Here?", `This replaces a ${TABLE_SIZES[r.s].name.split(" ")[1]} area of floor around you with the map. Continue?`, "§aBuild"))) return;
+  const t = buildTable(player, r.s);
+  player.sendMessage("§aWar Table built. Use the Map Brush on it, and steer it from Board Table > World Map.");
+  return tableMenu(player, t);
+}
+
+function ownersOf(nation) {
+  return nation ? new Set([`n:${nation.id}`, ...nation.regions.map((r) => r.id)]) : null;
+}
+
+function centerOnOwners(state, t, owners) {
+  const b = bounds(state, owners);
+  if (!b) return false;
+  t.cx = Math.round((b[0] + b[2]) / 2);
+  t.cz = Math.round((b[1] + b[3]) / 2);
+  const span = Math.max((b[2] - b[0] + 1) / (t.w - 2), (b[3] - b[1] + 1) / (t.h - 2));
+  t.zoom = ZOOMS.find((z) => z >= span) || ZOOMS[ZOOMS.length - 1];
+  return true;
+}
+
+function tableMenu(player, t) {
+  const move = (fn) => () => {
+    fn();
+    commit();
+    renderTable(t);
+  };
+  return loop(player, () => {
+    const state = S();
+    if (!tables().includes(t)) return null;
+    if (t.persp && !state.nations[t.persp]) t.persp = null;
+    const persp = t.persp ? state.nations[t.persp] : null;
+    const here = playerChunk(player);
+    const lines = [
+      `§l${persp ? `${persp.color}${persp.name}§r§l's view` : "World view"}§r`,
+      `§7Centre: §f${t.cx * 16}, ${t.cz * 16}§7 · each square = §f${t.zoom}x${t.zoom}§7 chunks (${t.zoom * 16} blocks)`,
+      persp ? "§7Colours: §aHome §9Allies §bFriends/Trade §7Neutral §6Rivals §cWar" : "§7Each country in its own colour. No situation markers in the world view.",
+    ];
+    if (persp) {
+      const rel = relationsText(state, persp);
+      if (rel) lines.push(`§7Relations: ${rel}`);
+    }
+    lines.push("", ...LEGEND);
+    const stepX = Math.max(1, Math.floor(t.w / 3)) * t.zoom;
+    const stepZ = Math.max(1, Math.floor(t.h / 3)) * t.zoom;
+    return {
+      title: "War Table",
+      body: lines.join("\n"),
+      options: [
+        { text: "^ North", run: move(() => { t.cz -= stepZ; }) },
+        { text: "v South", run: move(() => { t.cz += stepZ; }) },
+        { text: "< West", run: move(() => { t.cx -= stepX; }) },
+        { text: "> East", run: move(() => { t.cx += stepX; }) },
+        { text: "+ Zoom In", run: move(() => { t.zoom = ZOOMS[Math.max(0, ZOOMS.indexOf(t.zoom) - 1)]; }) },
+        { text: "- Zoom Out", run: move(() => { t.zoom = ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(t.zoom) + 1)]; }) },
+        here && { text: "Centre on Me", run: move(() => { [t.cx, t.cz] = here; }) },
+        { text: "Show Every Country", run: move(() => { centerOnOwners(state, t, null); }) },
+        { text: "Jump to a Country or City", run: () => jumpTo(player, t) },
+        { text: `View: ${persp ? persp.name : "World (no country)"}`, run: () => pickPerspective(player, t) },
+        { text: "Rebuild (refresh every block)", run: () => renderTable(t, true) },
+        isAdmin(player) && {
+          text: "§cRemove This Table",
+          run: async () => {
+            if (!(await confirm(player, "Remove", "Remove this War Table? The map floor becomes smooth stone.", "§cRemove"))) return;
+            removeTable(t);
+            return "back";
+          },
+        },
+      ],
+    };
+  });
+}
+
+async function jumpTo(player, t) {
+  const state = S();
+  const targets = [];
+  for (const n of Object.values(state.nations)) {
+    targets.push({ label: n.name, owners: ownersOf(n) });
+    for (const r of n.regions) targets.push({ label: `  ${r.name} (${n.name})`, owners: new Set([r.id]) });
+  }
+  if (!targets.length) return notice(player, "Jump", "There are no countries yet.");
+  const r = await modal(player, "Jump To", [{ key: "t", type: "dropdown", label: "Where?", options: targets.map((x) => x.label.slice(0, 60)) }], "Go");
+  if (!r) return;
+  if (!centerOnOwners(state, t, targets[r.t].owners)) return notice(player, "Jump", `${targets[r.t].label.trim()} has no land drawn yet.`);
+  commit();
+  renderTable(t);
+}
+
+async function pickPerspective(player, t) {
+  const nations = Object.values(S().nations);
+  const r = await modal(player, "Whose View?", [
+    { key: "p", type: "dropdown", label: "The world view shows plain borders. A country's view shows home, allies, enemies, war fronts and its situations.", options: ["World (no country)", ...nations.map((n) => n.name)], value: Math.max(0, nations.findIndex((n) => n.id === t.persp) + 1) },
+  ], "View");
+  if (!r) return;
+  t.persp = r.p === 0 ? null : nations[r.p - 1].id;
+  commit();
+  renderTable(t);
+}
+
+/** Pick what the Map Brush (and walk-painting) paints. */
+export async function chooseBrush(player) {
   const state = S();
   const targets = paintTargets(player, state);
-  if (targets.length <= 1) return notice(player, "Draw Borders", "You don't run any country. Ask an admin to add you as a ruler.");
-  const sess = paintSessions.get(player.id);
-  const r = await modal(player, "Brush", [
-    { key: "t", type: "dropdown", label: "Paint which country / city?", options: targets.map((t) => t.label.slice(0, 60)), value: Math.max(0, targets.findIndex((t) => t.key === sess?.target)) },
-    { key: "r", type: "slider", label: "Brush radius in chunks (0 = one chunk, 2 = 5x5)", min: 0, max: 4, value: sess?.radius ?? 1 },
+  if (targets.length <= 1) return notice(player, "Map Brush", "You don't run any country. Ask an admin to add you as a Ruler.");
+  const cur = brushes.get(player.id);
+  const r = await modal(player, "Map Brush", [
+    { key: "t", type: "dropdown", label: "Paint which country / city?", options: targets.map((x) => x.label.slice(0, 60)), value: Math.max(0, targets.findIndex((x) => x.key === cur?.target)) },
+    { key: "r", type: "slider", label: "Brush size in table squares (0 = one square)", min: 0, max: 3, value: cur?.radius ?? 0 },
   ], "Pick Brush");
   if (!r) return;
   const t = targets[r.t];
-  paintSessions.set(player.id, { target: t.key, label: t.label, radius: r.r, count: sess?.count || 0, walking: sess?.walking || false, corner: null });
+  brushes.set(player.id, { target: t.key, label: t.label, radius: r.r });
+  const walk = paintSessions.get(player.id);
+  if (walk) Object.assign(walk, { target: t.key, label: t.label });
+  player.sendMessage(`§aBrush: ${t.label}. Right-click squares on a War Table to paint.`);
 }
 
-function paintHere(player, sess, here) {
-  const state = S();
-  const n = paintSquare(state, here[0], here[1], sess.radius, sess.target, painterFor(player, state).canPaint);
-  sess.count += n;
-  commit();
-  player.sendMessage(`§7Painted ${n} chunk(s).`);
+// ---------- painting by walking around ----------
+
+function walkMenu(player) {
+  return loop(player, () => {
+    const state = S();
+    let sess = paintSessions.get(player.id);
+    const brush = brushes.get(player.id);
+    const here = playerChunk(player);
+    const idx = ownerIndex(state);
+    if (sess && sess.target && !idx[sess.target]) {
+      paintSessions.delete(player.id);
+      sess = null;
+    }
+    const owner = here ? ownerAt(state, here[0], here[1]) : null;
+    const lines = [
+      "§7Paint borders onto the land itself as you walk, one chunk (16x16 blocks) at a time - handy for tracing coastlines and rivers.",
+      "",
+      here ? `§7You are in chunk §f${here[0]}, ${here[1]}§7 - owned by §f${owner && idx[owner] ? (idx[owner].region ? `${idx[owner].region.name} (${idx[owner].nation.name})` : idx[owner].nation.name) : "nobody"}` : "§cGo to the Overworld to paint borders.",
+      brush ? `§7Brush: §f${brush.label}` : "§eChoose what to paint first.",
+    ];
+    if (sess) lines.push(`§7Walking brush: §f${sess.radius} chunk radius§7, ${sess.count} chunks painted${sess.walking ? " §a(painting ON)" : ""}`);
+    if (sess?.corner) lines.push(`§eCorner 1 at chunk ${sess.corner[0]}, ${sess.corner[1]}`);
+    const start = () => {
+      sess = sess || { radius: 1, count: 0, corner: null };
+      Object.assign(sess, { target: brush.target, label: brush.label });
+      paintSessions.set(player.id, sess);
+      return sess;
+    };
+    return {
+      title: "Paint by Walking",
+      body: lines.join("\n"),
+      options: [
+        { text: "Choose What to Paint", run: () => chooseBrush(player) },
+        brush && here && !sess?.walking && { text: "§aStart Painting as I Walk", run: () => { start().walking = true; player.sendMessage("§aPainting as you walk. Open the Board Table and choose Stop Painting when done."); return CLOSE; } },
+        sess?.walking && { text: "§cStop Painting", run: () => { sess.walking = false; commit(); } },
+        brush && here && { text: "Paint Where I Stand", run: () => { const s2 = start(); const n = paintSquare(state, here[0], here[1], s2.radius, s2.target, painterFor(player, state).canPaint); s2.count += n; commit(); player.sendMessage(`§7Painted ${n} chunk(s).`); } },
+        brush && here && { text: sess?.corner ? "Fill Rectangle to Here (corner 2)" : "Set Corner 1 Here", run: () => corner(player, start(), here) },
+        brush && {
+          text: "Walking Brush Size",
+          run: async () => {
+            const r = await modal(player, "Walking Brush", [{ key: "r", type: "slider", label: "Radius in chunks (0 = one chunk, 2 = 5x5)", min: 0, max: 4, value: sess?.radius ?? 1 }]);
+            if (r) start().radius = r.r;
+          },
+        },
+      ],
+    };
+  });
 }
 
 async function corner(player, sess, here) {

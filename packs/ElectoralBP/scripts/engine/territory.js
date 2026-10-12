@@ -4,7 +4,6 @@
 // they are handed to another country.
 
 import { getStance } from "./diplomacy.js";
-import { GLYPH, tile } from "../data/glyphs.js";
 import { autoApportion, seedHistoricalLean } from "./generate.js";
 
 export const MAX_FILL = 40000;
@@ -160,17 +159,18 @@ export function viewColor(state, persp, nationId) {
 }
 
 /**
- * view: { cx, cz, zoom, w, h, persp, you: [cx, cz], markers: { ownerKey: level } }
- * Returns rows of tile characters (one string per row).
+ * Works out what every square of a map shows.
+ * view: { cx, cz, zoom, w, h, persp, markers: { ownerKey: level } }
+ * Returns cells[row][col] = { owner, nationId, regionId, color, edge, front, marker, cx, cz }
+ * where cx/cz is the chunk at the centre of the square.
  */
-export function renderMap(state, view) {
+export function computeCells(state, view) {
   const idx = ownerIndex(state);
   const chunks = ensureMap(state).chunks;
   const { w, h, zoom } = view;
   const x0 = view.cx - Math.floor(w / 2) * zoom;
   const z0 = view.cz - Math.floor(h / 2) * zoom;
-  const sampleStep = zoom >= 4 ? Math.max(1, Math.floor(zoom / 3)) : zoom;
-  // owner of each cell: the most common claim among a few sample chunks
+  const step = zoom >= 4 ? Math.max(1, Math.floor(zoom / 3)) : zoom;
   const grid = [];
   for (let j = 0; j < h; j++) {
     const row = [];
@@ -182,8 +182,8 @@ export function renderMap(state, view) {
       else {
         const count = {};
         let best = 0;
-        for (let sx = 0; sx < zoom; sx += sampleStep) {
-          for (let sz = 0; sz < zoom; sz += sampleStep) {
+        for (let sx = 0; sx < zoom; sx += step) {
+          for (let sz = 0; sz < zoom; sz += step) {
             const o = chunks[key(bx + sx, bz + sz)];
             if (!o) continue;
             count[o] = (count[o] || 0) + 1;
@@ -198,7 +198,6 @@ export function renderMap(state, view) {
     }
     grid.push(row);
   }
-  // marker cells
   const markerAt = {};
   if (view.markers) {
     const cents = centroids(state);
@@ -210,42 +209,37 @@ export function renderMap(state, view) {
       if (i >= 0 && i < w && j >= 0 && j < h) markerAt[`${i},${j}`] = level;
     }
   }
-  const rows = [];
+  const cells = [];
   for (let j = 0; j < h; j++) {
-    let line = "";
+    const row = [];
     for (let i = 0; i < w; i++) {
       const owner = grid[j][i];
-      if (view.you && Math.floor((view.you[0] - x0) / zoom) === i && Math.floor((view.you[1] - z0) / zoom) === j) {
-        line += GLYPH.you;
-        continue;
-      }
-      const m = markerAt[`${i},${j}`];
-      if (m !== undefined) {
-        line += m === "opportunity" ? GLYPH.opportunity : GLYPH.situation[Math.max(0, Math.min(2, m))];
-        continue;
-      }
-      if (!owner) {
-        line += GLYPH.wild;
-        continue;
-      }
-      const nationId = idx[owner].nation.id;
-      // borders: darker where the land changes owner to the right or below
-      const right = i + 1 < w ? grid[j][i + 1] : owner;
-      const below = j + 1 < h ? grid[j + 1][i] : owner;
-      const edge = (right && right !== owner) || (below && below !== owner) || right === null || below === null;
-      // front lines: enemy land touching home land, in a nation's own view
-      if (view.persp && nationId !== view.persp && getStance(state, view.persp, nationId) === "war") {
-        const near = [grid[j][i - 1], grid[j][i + 1], grid[j - 1]?.[i], grid[j + 1]?.[i]];
-        if (near.some((o) => o && idx[o].nation.id === view.persp)) {
-          line += GLYPH.front;
-          continue;
+      const cell = { owner, nationId: null, regionId: null, color: null, edge: false, front: false, marker: markerAt[`${i},${j}`], cx: x0 + i * zoom + Math.floor(zoom / 2), cz: z0 + j * zoom + Math.floor(zoom / 2) };
+      if (owner) {
+        const info = idx[owner];
+        cell.nationId = info.nation.id;
+        cell.regionId = info.region ? info.region.id : null;
+        cell.color = viewColor(state, view.persp, cell.nationId);
+        const right = i + 1 < w ? grid[j][i + 1] : owner;
+        const below = j + 1 < h ? grid[j + 1][i] : owner;
+        cell.edge = right !== owner || below !== owner;
+        if (view.persp && cell.nationId !== view.persp && getStance(state, view.persp, cell.nationId) === "war") {
+          const near = [grid[j][i - 1], grid[j][i + 1], grid[j - 1]?.[i], grid[j + 1]?.[i]];
+          cell.front = near.some((o) => o && idx[o].nation.id === view.persp);
         }
       }
-      line += tile(viewColor(state, view.persp, nationId), edge);
+      row.push(cell);
     }
-    rows.push(line);
+    cells.push(row);
   }
-  return rows;
+  return cells;
+}
+
+/** The chunks covered by one map square. */
+export function cellChunks(view, i, j) {
+  const x0 = view.cx - Math.floor(view.w / 2) * view.zoom + i * view.zoom;
+  const z0 = view.cz - Math.floor(view.h / 2) * view.zoom + j * view.zoom;
+  return [x0, z0, x0 + view.zoom - 1, z0 + view.zoom - 1];
 }
 
 // ---------- moving land between countries ----------

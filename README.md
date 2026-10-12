@@ -86,19 +86,24 @@ Every interest group in every county scores every candidate on:
 
 Votes then include random swings at the national, county and group level, plus that election's surprises. Results show why each county went the way it did, and how every group voted.
 
-## World map and borders
+## World map: the War Table
 
-Countries and their cities (counties) are painted onto the real Minecraft world, one chunk (16×16 blocks) at a time.
+The world map is a **War Table**: a map of your actual world, built out of blocks on the floor of a room, like the map in a grand-strategy game.
 
-- **Draw Borders** (Board Table → World Map): pick a brush (a country's city, the country's land outside any city, or Erase) and a radius. Then either:
-  - walk around with painting on, or
-  - mark two corners to fill a rectangle.
+- **Building one:** an admin stands in the middle of an empty floor and picks Board Table → World Map → **Build a War Table Here**. Sizes go from 24×16 up to 64×48 blocks, and the floor is replaced by the map.
+- **Real terrain:** water, grassland, forest, desert, badlands, snow, ice, mountains, swamp and settlements, read from the real world. The map reveals itself as players explore (dark tiles are unexplored), and an admin can **Map the Terrain Around Me** to fill in everything loaded at once.
+- **Territories:** each country is solid concrete in its color, with wool outlines between cities. Floating name labels mark countries and cities.
+- **Views:**
+  - **World view:** every country in its own color, with no markers.
+  - **A country's view:** home in lime, allies blue, friends and trade partners light blue, rivals orange, enemies red, a redstone **front line** where the country's land meets an enemy at war, and its situations marked with a torch, lantern or redstone torch (minor, serious, critical) or an end rod (opportunity).
+- **Steering:** from the Board Table you can scroll north, south, east and west, zoom (each square is 1 to 64 chunks), centre on yourself, show every country, jump to any country or city, and switch views. "Map: Our View" on a country's page turns the nearest table to that country.
 
-  Admins can paint anywhere. A country's **Rulers** can paint unclaimed land and their own land.
-- **Give to Another Country** (on any county): the county moves with its land, people and voting history. Cities also change hands through situations and disputes.
-- **The map** draws with custom colored tiles from the resource pack. You can scroll, zoom (1 tile = 1 to 32 chunks), centre on yourself, show everything, jump to any country or city, and pick a size (Small for phones, Large for PC).
-  - **World view:** plain borders in each country's color. No markers or relationship colors.
-  - **A country's view:** home in green, allies blue, friends and trade partners aqua, rivals orange, enemies at war red with a striped front line, and that country's situations marked on the affected cities.
+### Painting borders
+
+- **Map Brush** (craft it from a feather and a stick, or get one from World Map). Right-click the air to choose what to paint (a city, a country's land outside its cities, or Erase) and a brush size. Then right-click squares on the War Table to paint the real land under them.
+- **Paint by walking:** paint chunk by chunk as you walk, or mark two corners to fill a rectangle. Handy for tracing coastlines and rivers.
+- **Moving cities:** **Give to Another Country** on any county hands it over with its land, people and voting history. Disputes and situations can move cities too.
+- Admins can paint anywhere. A country's **Rulers** can paint unclaimed land and their own land.
 
 ## Economy
 
@@ -123,7 +128,7 @@ High tariffs strain trade partners. A country deep in debt can no longer fund cr
 
 ## Situations
 
-Situations strike a country's cities during economy turns, or an admin can trigger one. There are 44 of them, covering economy, disasters, health, unrest, crime, politics, the military, war and diplomacy. They fill in your own country and city names, for example: "Baza has uncovered a massive deposit of natural resources beneath Northvale."
+Situations strike a country's cities during economy turns, or an admin can trigger one. There are 44 of them, covering economy, disasters, health, unrest, crime, politics, the military, war and diplomacy. They only use names you entered: your counties, the other country, and its nearest real city. For example: "Thousands of refugees fleeing Gorgonzola's Kesh are arriving in Northvale."
 
 - **Responses:** each situation has its own three responses, plus **Do nothing**, and a **priority (0–5)** that costs money every turn. Neglected crises grow, escalate (an Outbreak becomes a Plague) and can spread to neighbouring cities on the map. Opportunities expire if ignored.
 - **Counter-situations:** other countries react with their own moves. When Baza finds the deposit, Gorgonzola can invest in a joint venture, seize the deposit, or undercut Baza's exports.

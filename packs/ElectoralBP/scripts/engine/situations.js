@@ -10,7 +10,7 @@ import { createNation, getRegion, nextId, regionBlocShares } from "../core/state
 import { clamp } from "../core/random.js";
 import { getStance, setStance } from "./diplomacy.js";
 import { ensureEconomy, isBroke } from "./economy.js";
-import { neighbours, transferRegion } from "./territory.js";
+import { centroids, neighbours, transferRegion } from "./territory.js";
 
 const ORDER = ["war", "rival", "tense", "neutral", "friendly", "trade", "alliance"];
 const HOSTILE = new Set(["war", "rival", "tense"]);
@@ -70,12 +70,42 @@ function pickRegions(nation, tpl, rng, count) {
   return out;
 }
 
+/** One of the other country's cities: the one nearest the trouble, if the map knows. */
+function otherCity(state, sit) {
+  const other = state.nations[sit.otherId];
+  if (!other || !other.regions.length) return "their border towns";
+  const r = other.regions.find((x) => x.id === sit.otherCityId) || other.regions[0];
+  return r.name;
+}
+
+function nearestCity(state, other, regionIds) {
+  if (!other?.regions.length) return null;
+  const cents = centroids(state);
+  const here = regionIds.map((id) => cents[id]).filter(Boolean);
+  if (!here.length) return other.regions[0].id;
+  let best = null;
+  let bd = Infinity;
+  for (const r of other.regions) {
+    const c = cents[r.id];
+    if (!c) continue;
+    for (const h of here) {
+      const d = (c[0] - h[0]) ** 2 + (c[1] - h[1]) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = r.id;
+      }
+    }
+  }
+  return best || other.regions[0].id;
+}
+
 function fillers(state, nation, sit) {
   const gov = effectiveGov(nation);
   return {
     country: nation.name,
     city: sit.regionIds.map((id) => getRegion(nation, id)?.name).filter(Boolean).join(" & ") || "the capital",
     other: state.nations[sit.otherId]?.name || "a foreign power",
+    othercity: otherCity(state, sit),
     lobby: BLOC_BY_ID[sit.lobby]?.name || "Business Lobby",
     leader: gov.leaderTitle,
   };
@@ -138,6 +168,7 @@ export function spawnSituation(state, nation, rng, opts = {}) {
     nationId: nation.id,
     regionIds,
     otherId,
+    otherCityId: otherId ? nearestCity(state, state.nations[otherId], regionIds) : null,
     lobby: rng.pick(BLOCS).id,
     severity: tpl.severity || 2,
     startSeverity: tpl.severity || 2,

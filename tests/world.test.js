@@ -3,7 +3,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { newState, createNation } from "../packs/ElectoralBP/scripts/core/state.js";
 import { createRng } from "../packs/ElectoralBP/scripts/core/random.js";
-import { paintSquare, fillRect, renderMap, ownerAt, transferRegion, neighbours, centroids, reassign } from "../packs/ElectoralBP/scripts/engine/territory.js";
+import { paintSquare, fillRect, computeCells, ownerAt, transferRegion, neighbours, centroids, reassign } from "../packs/ElectoralBP/scripts/engine/territory.js";
+import { planTable } from "../packs/ElectoralBP/scripts/engine/wartable.js";
+import { fillBlock, edgeBlock, FRONT_BLOCK, MARKERS, TERRAIN, UNKNOWN_BLOCK, classify } from "../packs/ElectoralBP/scripts/data/mapblocks.js";
 import { ensureEconomy, runEconomyTurn, policyAppeal } from "../packs/ElectoralBP/scripts/engine/economy.js";
 import { spawnSituation, respond, respondCounter, advanceSituations, ruleDispute, termRecord } from "../packs/ElectoralBP/scripts/engine/situations.js";
 import { runNationTurn } from "../packs/ElectoralBP/scripts/engine/turns.js";
@@ -11,7 +13,6 @@ import { setStance } from "../packs/ElectoralBP/scripts/engine/diplomacy.js";
 import { SCENARIOS } from "../packs/ElectoralBP/scripts/data/scenarios.js";
 import { computeElection, openElection } from "../packs/ElectoralBP/scripts/engine/election.js";
 import { effectiveGov } from "../packs/ElectoralBP/scripts/data/governments.js";
-import { GLYPH, tile } from "../packs/ElectoralBP/scripts/data/glyphs.js";
 import { buildNation } from "./helpers.js";
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
@@ -29,19 +30,27 @@ function twoNations(seed = 1) {
 test("borders: paint, render from every perspective, hand a city over", () => {
   const { s, baza, gorg } = twoNations();
   assert.equal(ownerAt(s, 0, 0), baza.regions[0].id);
-  const view = { cx: 10, cz: 5, zoom: 1, w: 24, h: 10, persp: null };
-  const world = renderMap(s, view);
-  assert.equal(world.length, 10);
-  assert.ok(world.every((row) => [...row].length === 24));
-  assert.ok(world[0].includes(tile(baza.color)) || world[0].includes(tile(baza.color, true)), "neutral view uses nation colours");
+  const table = { x0: 100, y: 63, z0: 200, w: 24, h: 10, cx: 10, cz: 5, zoom: 1, persp: null };
+  const terrain = { "-2,0": classify("minecraft:water", 62), "-2,1": classify("minecraft:oak_leaves", 70) };
+  const world = planTable(s, terrain, table);
+  assert.equal(world.floor.length, 240);
+  const blocks = new Set(world.floor);
+  assert.ok(blocks.has(fillBlock(baza.color)) && blocks.has(edgeBlock(baza.color)), "countries in their own colour, with outlines");
+  assert.ok(blocks.has(TERRAIN.w.block) && blocks.has(TERRAIN.f.block), "explored terrain shows as water and forest");
+  assert.ok(blocks.has(UNKNOWN_BLOCK), "unexplored land is fogged");
+  assert.ok(world.top.every((t) => t === null), "the world view has no situation markers");
+  assert.ok(world.labels.some((l) => l.text.includes("BAZA")) && world.labels.some((l) => l.text.includes(baza.regions[0].name)), "country and city labels");
   setStance(s, baza.id, gorg.id, "war");
-  const mine = renderMap(s, { ...view, persp: baza.id, markers: { [baza.regions[1].id]: 2 } });
-  assert.ok(mine.join("").includes(tile("§a")) || mine.join("").includes(tile("§a", true)), "home is green");
-  assert.ok(mine.join("").includes(GLYPH.front), "war front line shown");
-  assert.ok(mine.join("").includes(GLYPH.situation[2]), "situation marker shown in a nation's view");
-  assert.ok(!world.join("").includes(GLYPH.situation[2]), "the neutral world view has no markers");
-  const zoomed = renderMap(s, { ...view, zoom: 4 });
-  assert.ok(zoomed.join("").replaceAll(GLYPH.wild, "").length > 0, "zoomed out still shows land");
+  const { sit } = spawnSituation(s, baza, createRng(1), { tplId: "plague", regionIds: [baza.regions[1].id] });
+  sit.severity = 4.5;
+  const mine = planTable(s, terrain, { ...table, persp: baza.id });
+  assert.ok(mine.floor.includes(fillBlock("§a")), "home is green");
+  assert.ok(mine.floor.includes(fillBlock("§c")) || mine.floor.includes(edgeBlock("§c")), "the enemy is red");
+  assert.ok(mine.floor.includes(FRONT_BLOCK), "war front line shown");
+  assert.ok(mine.top.includes(MARKERS[2]), "critical situation marker in a nation's view");
+  const zoomed = planTable(s, terrain, { ...table, zoom: 4 });
+  assert.ok(zoomed.floor.some((b) => b === fillBlock(baza.color) || b === edgeBlock(baza.color)), "zoomed out still shows land");
+  assert.equal(computeCells(s, { cx: 10, cz: 5, zoom: 1, w: 24, h: 10 })[5][4].owner, ownerAt(s, 2, 5));
   // neighbours: last Baza county touches first Gorgonzola county
   assert.ok(neighbours(s, baza.regions[4].id).has(gorg.regions[0].id));
   // hand Baza's border county to Gorgonzola - its land goes with it
@@ -176,4 +185,19 @@ test("turns run the whole loop without errors", () => {
   assert.ok(Number.isFinite(baza.economy.gdp) && Number.isFinite(baza.economy.treasury));
   assert.ok(baza.record.length + gorg.record.length > 5, "situations happened and were graded");
   JSON.stringify(s);
+});
+
+test("situations name the real counties and the other country's real cities", () => {
+  const { s, baza, gorg } = twoNations(12);
+  baza.regions[0].name = "Northvale";
+  gorg.regions.forEach((r, i) => (r.name = ["Kesh", "Dunmar", "Orrow", "Velt", "Pyre"][i]));
+  for (const tplId of ["refugees", "border_raid", "spies", "deposit"]) {
+    setStance(s, baza.id, gorg.id, "rival");
+    const { sit } = spawnSituation(s, baza, createRng(3), { tplId, regionIds: [baza.regions[0].id], otherId: tplId === "deposit" ? null : gorg.id });
+    assert.ok(sit.text.includes("Northvale"), `${tplId}: ${sit.text}`);
+    if (tplId !== "deposit") {
+      assert.ok(gorg.regions.some((r) => sit.text.includes(r.name)), `${tplId} names a real Gorgonzolan city: ${sit.text}`);
+      assert.ok(sit.text.includes("Gorgonzola"));
+    }
+  }
 });

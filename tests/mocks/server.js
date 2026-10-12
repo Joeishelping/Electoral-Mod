@@ -23,7 +23,46 @@ const scoreboard = {
   setObjectiveAtDisplaySlot: (slot, { objective }) => { _sidebar.objective = objective; },
 };
 
+// A tiny voxel world: blocks the scripts place, plus generated terrain underneath.
+export const _blocks = new Map();
+export const _entities = [];
+function terrainAt(x, z) {
+  const t = Math.sin(x / 90) + Math.cos(z / 70);
+  return t > 1.2 ? "minecraft:water" : t < -1.3 ? "minecraft:sand" : t > 0.6 ? "minecraft:oak_leaves" : "minecraft:grass_block";
+}
+function makeBlock(x, y, z) {
+  const k = `${x},${y},${z}`;
+  return {
+    get typeId() { return _blocks.get(k) || (y === 64 ? terrainAt(x, z) : "minecraft:air"); },
+    get isAir() { return this.typeId === "minecraft:air"; },
+    location: { x, y, z },
+    setType(t) {
+      if (typeof t !== "string" || !t.startsWith("minecraft:")) throw new Error(`bad block type ${t}`);
+      _blocks.set(k, t);
+    },
+  };
+}
+export const _overworld = {
+  id: "minecraft:overworld",
+  getBlock: ({ x, y, z }) => (Math.abs(x) > 30000 || Math.abs(z) > 30000 ? undefined : makeBlock(Math.floor(x), Math.floor(y), Math.floor(z))),
+  getTopmostBlock: ({ x, z }) => makeBlock(Math.floor(x), 64, Math.floor(z)),
+  spawnEntity(type, loc) {
+    const e = { typeId: type, location: loc, nameTag: "", tags: new Set(), addTag(t) { this.tags.add(t); }, remove() { _entities.splice(_entities.indexOf(this), 1); } };
+    _entities.push(e);
+    return e;
+  },
+  getEntities: ({ type, tags = [] } = {}) => _entities.filter((e) => (!type || e.typeId === type) && tags.every((t) => e.tags.has(t))),
+};
+
+export class ItemStack {
+  constructor(typeId, amount = 1) {
+    this.typeId = typeId;
+    this.amount = amount;
+  }
+}
+
 export const world = {
+  getDimension: () => _overworld,
   scoreboard,
   getDynamicProperty: (k) => props.get(k),
   setDynamicProperty: (k, v) => {

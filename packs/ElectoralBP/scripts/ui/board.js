@@ -40,7 +40,7 @@ const HELP = [
   "",
   "§66. Election night§r (about 20 min) - results stream into chat with a live sidebar scoreboard. Election-day surprises, exit polls, lead changes, calls and recounts. Polls can be wrong!",
   "",
-  "§67. The world map§r - paint countries and cities onto the real world (Draw Borders), hand cities to other countries, and view it from no country's perspective or from one country's (home, allies, enemies, war fronts, situations).",
+  "§67. The War Table§r - a map of the real world built from blocks in a room: explored terrain, every country and city, war fronts and situations. Paint borders by right-clicking it with the Map Brush, steer it from World Map, and view it from no country's perspective or from one country's.",
   "",
   "§68. Economy§r - taxes, tariffs and a budget (military, infrastructure, welfare, research, propaganda) drive GDP, the treasury, the performance sliders and how each interest group feels.",
   "",

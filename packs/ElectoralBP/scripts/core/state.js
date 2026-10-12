@@ -176,6 +176,7 @@ export function normalizeState(state) {
   state.map = state.map || { chunks: {} };
   state.map.chunks = state.map.chunks || {};
   state.disputes = state.disputes || [];
+  state.tables = state.tables || [];
   delete state.houses;
   for (const nation of Object.values(state.nations)) {
     nation.metrics = { ...defaultMetrics(), ...(nation.metrics || {}) };
