@@ -1,12 +1,14 @@
 // Electoral Board Table - entry point.
 // Interact with a Board Table block (or run /scriptevent electoral:open) to open the board.
 
-import { system, world } from "@minecraft/server";
+import { CommandPermissionLevel, CustomCommandStatus, system, world } from "@minecraft/server";
 import { getState } from "./core/storage.js";
 import { openBoard } from "./ui/board.js";
 import { nightInProgress, startTheme, tick } from "./ui/ticker.js";
-import { brushOn, renderAll } from "./ui/wartable.js";
-import { chooseBrush } from "./ui/map.js";
+import { closeMapView, flushMapEdits, inMapView, MAP_ITEM, mapTick, openMapView, releaseIfStuck } from "./ui/mapscreen.js";
+import { exploreTick } from "./ui/explore.js";
+import { dropLegacyTerrain } from "./core/terrain.js";
+import { diag } from "./ui/diag.js";
 
 const open = new Set();
 
@@ -28,19 +30,31 @@ async function openFor(player) {
   }
 }
 
-system.beforeEvents.startup.subscribe(({ blockComponentRegistry, itemComponentRegistry }) => {
-  // The Map Brush: right-click the air to pick what to paint, right-click a War Table square to paint it.
-  itemComponentRegistry.registerCustomComponent("electoral:map_brush", {
-    onUse(event) {
-      const player = event.source;
-      if (player) system.run(() => chooseBrush(player).catch(() => {}));
-    },
-    onUseOn(event) {
-      const player = event.source;
-      const block = event.block;
-      if (player && block) system.run(() => brushOn(player, block));
-    },
-  });
+function toggleMap(player) {
+  if (!player) return;
+  if (inMapView(player)) closeMapView(player);
+  else openMapView(player);
+}
+
+// The World Map item: use it to open (or close) the map screen.
+world.afterEvents.itemUse.subscribe((event) => {
+  if (event.itemStack?.typeId === MAP_ITEM) toggleMap(event.source);
+});
+
+system.beforeEvents.startup.subscribe(({ blockComponentRegistry, customCommandRegistry }) => {
+  // /electoral:map opens the map for anyone
+  try {
+    customCommandRegistry.registerCommand(
+      { name: "electoral:map", description: "Open the ElectoralV2 world map", permissionLevel: CommandPermissionLevel?.Any ?? 0, cheatsRequired: false },
+      (origin) => {
+        const id = origin?.sourceEntity?.id;
+        system.run(() => toggleMap(world.getPlayers().find((p) => p.id === id)));
+        return { status: CustomCommandStatus?.Success ?? 0 };
+      },
+    );
+  } catch {
+    // custom commands unavailable - the item, the Board Table and /scriptevent electoral:map still work
+  }
   blockComponentRegistry.registerCustomComponent("electoral:board_table", {
     onPlayerInteract(event) {
       const player = event.player;
@@ -50,6 +64,17 @@ system.beforeEvents.startup.subscribe(({ blockComponentRegistry, itemComponentRe
 });
 
 system.afterEvents.scriptEventReceive.subscribe((event) => {
+  if (event.id === "electoral:diag") {
+    const [x, z] = event.message.split(/\s+/).map(Number);
+    diag(x || 0, z || 0);
+    return;
+  }
+  if (event.id === "electoral:map") {
+    const src = event.sourceEntity;
+    if (src && src.typeId === "minecraft:player") toggleMap(src);
+    else toggleMap(world.getPlayers({ name: event.message.trim() })[0]);
+    return;
+  }
   if (event.id !== "electoral:open") return;
   const src = event.sourceEntity;
   if (src && src.typeId === "minecraft:player") {
@@ -63,7 +88,18 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
 
 world.afterEvents.worldLoad.subscribe(() => {
   getState();
-  system.runTimeout(() => renderAll(true), 100); // rebuild War Tables after a restart
+  dropLegacyTerrain();
+  for (const p of world.getPlayers()) releaseIfStuck(p);
+  // the map screen and terrain mapping run every tick
+  system.runInterval(() => {
+    try {
+      mapTick();
+      flushMapEdits();
+      exploreTick();
+    } catch (e) {
+      console.warn(`[Electoral] map tick failed: ${e}`);
+    }
+  }, 1);
   system.runInterval(() => {
     try {
       tick();
@@ -76,6 +112,7 @@ world.afterEvents.worldLoad.subscribe(() => {
 // Players who join (or respawn into the world) mid-night hear the theme too.
 world.afterEvents.playerSpawn.subscribe((event) => {
   if (!event.initialSpawn) return;
+  releaseIfStuck(event.player); // left the game with the map open
   try {
     if (nightInProgress()) system.runTimeout(() => startTheme(event.player), 40);
   } catch {

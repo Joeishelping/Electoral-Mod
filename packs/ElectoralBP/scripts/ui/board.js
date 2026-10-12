@@ -40,7 +40,7 @@ const HELP = [
   "",
   "§66. Election night§r (about 20 min) - results stream into chat with a live sidebar scoreboard. Election-day surprises, exit polls, lead changes, calls and recounts. Polls can be wrong!",
   "",
-  "§67. The War Table§r - a map of the real world built from blocks in a room: explored terrain, every country and city, war fronts and situations. Paint borders by right-clicking it with the Map Brush, steer it from World Map, and view it from no country's perspective or from one country's.",
+  "§67. The World Map§r - a full-screen map of the real terrain players have explored, with every country, city, war front and situation. You stand still while it's open: move the cursor with your movement keys, Jump to use a tool (inspect, paint, rectangle, paint bucket, found a city), Sneak for the menu, scroll the hotbar to zoom. Open it from World Map here, with the World Map item, or /electoral:map.",
   "",
   "§68. Economy§r - taxes, tariffs and a budget (military, infrastructure, welfare, research, propaganda) drive GDP, the treasury, the performance sliders and how each interest group feels.",
   "",

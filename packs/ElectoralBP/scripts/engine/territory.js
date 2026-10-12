@@ -69,6 +69,38 @@ export function fillRect(state, a, b, target, canPaint = () => true) {
   return changed;
 }
 
+/**
+ * Paint-bucket: repaints the patch of same-owner land joined to chunk (cx, cz),
+ * staying inside box [x0, z0, x1, z1]. Returns the number changed, or -1 if too big.
+ */
+export function floodFill(state, cx, cz, target, canPaint = () => true, box = null) {
+  const chunks = ensureMap(state).chunks;
+  const from = chunks[key(cx, cz)] || null;
+  if (from === target || (from && !canPaint(from))) return 0;
+  const inBox = (x, z) => !box || (x >= box[0] && z >= box[1] && x <= box[2] && z <= box[3]);
+  const seen = new Set([key(cx, cz)]);
+  const todo = [[cx, cz]];
+  const hits = [];
+  while (todo.length) {
+    const [x, z] = todo.pop();
+    hits.push([x, z]);
+    if (hits.length > MAX_FILL) return -1;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const nz = z + dz;
+      const k = key(nx, nz);
+      if (seen.has(k) || !inBox(nx, nz) || (chunks[k] || null) !== from) continue;
+      seen.add(k);
+      todo.push([nx, nz]);
+    }
+  }
+  for (const [x, z] of hits) {
+    if (target) chunks[key(x, z)] = target;
+    else delete chunks[key(x, z)];
+  }
+  return hits.length;
+}
+
 /** Re-points every chunk owned by `from` to `to` (null erases). */
 export function reassign(state, from, to) {
   const chunks = ensureMap(state).chunks;
@@ -156,90 +188,6 @@ export function viewColor(state, persp, nationId) {
   if (!persp) return state.nations[nationId]?.color || "§7";
   if (nationId === persp) return "§a";
   return STANCE_COLOR[getStance(state, persp, nationId)] || "§7";
-}
-
-/**
- * Works out what every square of a map shows.
- * view: { cx, cz, zoom, w, h, persp, markers: { ownerKey: level } }
- * Returns cells[row][col] = { owner, nationId, regionId, color, edge, front, marker, cx, cz }
- * where cx/cz is the chunk at the centre of the square.
- */
-export function computeCells(state, view) {
-  const idx = ownerIndex(state);
-  const chunks = ensureMap(state).chunks;
-  const { w, h, zoom } = view;
-  const x0 = view.cx - Math.floor(w / 2) * zoom;
-  const z0 = view.cz - Math.floor(h / 2) * zoom;
-  const step = zoom >= 4 ? Math.max(1, Math.floor(zoom / 3)) : zoom;
-  const grid = [];
-  for (let j = 0; j < h; j++) {
-    const row = [];
-    for (let i = 0; i < w; i++) {
-      const bx = x0 + i * zoom;
-      const bz = z0 + j * zoom;
-      let owner = null;
-      if (zoom === 1) owner = chunks[key(bx, bz)] || null;
-      else {
-        const count = {};
-        let best = 0;
-        for (let sx = 0; sx < zoom; sx += step) {
-          for (let sz = 0; sz < zoom; sz += step) {
-            const o = chunks[key(bx + sx, bz + sz)];
-            if (!o) continue;
-            count[o] = (count[o] || 0) + 1;
-            if (count[o] > best) {
-              best = count[o];
-              owner = o;
-            }
-          }
-        }
-      }
-      row.push(owner && idx[owner] ? owner : null);
-    }
-    grid.push(row);
-  }
-  const markerAt = {};
-  if (view.markers) {
-    const cents = centroids(state);
-    for (const [owner, level] of Object.entries(view.markers)) {
-      const c = cents[owner];
-      if (!c) continue;
-      const i = Math.floor((c[0] - x0) / zoom);
-      const j = Math.floor((c[1] - z0) / zoom);
-      if (i >= 0 && i < w && j >= 0 && j < h) markerAt[`${i},${j}`] = level;
-    }
-  }
-  const cells = [];
-  for (let j = 0; j < h; j++) {
-    const row = [];
-    for (let i = 0; i < w; i++) {
-      const owner = grid[j][i];
-      const cell = { owner, nationId: null, regionId: null, color: null, edge: false, front: false, marker: markerAt[`${i},${j}`], cx: x0 + i * zoom + Math.floor(zoom / 2), cz: z0 + j * zoom + Math.floor(zoom / 2) };
-      if (owner) {
-        const info = idx[owner];
-        cell.nationId = info.nation.id;
-        cell.regionId = info.region ? info.region.id : null;
-        cell.color = viewColor(state, view.persp, cell.nationId);
-        const right = i + 1 < w ? grid[j][i + 1] : owner;
-        const below = j + 1 < h ? grid[j + 1][i] : owner;
-        cell.edge = right !== owner || below !== owner;
-        if (view.persp && cell.nationId !== view.persp && getStance(state, view.persp, cell.nationId) === "war") {
-          const near = [grid[j][i - 1], grid[j][i + 1], grid[j - 1]?.[i], grid[j + 1]?.[i]];
-          cell.front = near.some((o) => o && idx[o].nation.id === view.persp);
-        }
-      }
-      row.push(cell);
-    }
-    cells.push(row);
-  }
-  return cells;
-}
-
-/** The chunks covered by one map square. */
-export function cellChunks(view, i, j) {
-  const x0 = view.cx - Math.floor(view.w / 2) * view.zoom + i * view.zoom;
-  const z0 = view.cz - Math.floor(view.h / 2) * view.zoom + j * view.zoom;
-  return [x0, z0, x0 + view.zoom - 1, z0 + view.zoom - 1];
 }
 
 // ---------- moving land between countries ----------

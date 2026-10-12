@@ -4,6 +4,7 @@
 
 import { world } from "@minecraft/server";
 import { newState, normalizeState } from "./state.js";
+import { clearTerrain } from "./terrain.js";
 
 const PREFIX = "electoral:state";
 const CHUNK = 16000; // characters; stays under the byte limit even for 2-byte chars
@@ -56,52 +57,11 @@ export function saveState() {
 
 export function resetState() {
   cache = newState();
-  terrain = {};
-  saveTerrain();
+  clearTerrain();
   saveState();
   return cache;
 }
 
 export function stateSize() {
   return cache ? JSON.stringify(cache).length : 0;
-}
-
-// ---------- explored terrain (kept apart from the main state: it gets big) ----------
-
-const TERRAIN = "electoral:terrain";
-let terrain = null;
-
-export function getTerrain() {
-  if (terrain) return terrain;
-  try {
-    const metaRaw = world.getDynamicProperty(`${TERRAIN}:meta`);
-    if (typeof metaRaw === "string") {
-      const meta = JSON.parse(metaRaw);
-      let json = "";
-      for (let i = 0; i < meta.count; i++) json += world.getDynamicProperty(`${TERRAIN}:${meta.slot}:${i}`) || "";
-      terrain = JSON.parse(json);
-      return terrain;
-    }
-  } catch (e) {
-    console.warn(`[Electoral] Failed to load terrain: ${e}`);
-  }
-  terrain = {};
-  return terrain;
-}
-
-export function saveTerrain() {
-  if (!terrain) return;
-  const json = JSON.stringify(terrain);
-  let meta = { slot: 1, count: 0 };
-  try {
-    const raw = world.getDynamicProperty(`${TERRAIN}:meta`);
-    if (typeof raw === "string") meta = JSON.parse(raw);
-  } catch {
-    // first save
-  }
-  const slot = meta.slot === 0 ? 1 : 0;
-  const count = Math.max(1, Math.ceil(json.length / CHUNK));
-  for (let i = 0; i < count; i++) world.setDynamicProperty(`${TERRAIN}:${slot}:${i}`, json.slice(i * CHUNK, (i + 1) * CHUNK));
-  world.setDynamicProperty(`${TERRAIN}:meta`, JSON.stringify({ slot, count }));
-  for (let i = 0; i < (meta.count || 0); i++) world.setDynamicProperty(`${TERRAIN}:${meta.slot}:${i}`, undefined);
 }

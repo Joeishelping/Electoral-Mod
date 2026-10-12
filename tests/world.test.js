@@ -3,9 +3,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { newState, createNation } from "../packs/ElectoralBP/scripts/core/state.js";
 import { createRng } from "../packs/ElectoralBP/scripts/core/random.js";
-import { paintSquare, fillRect, computeCells, ownerAt, transferRegion, neighbours, centroids, reassign } from "../packs/ElectoralBP/scripts/engine/territory.js";
-import { planTable } from "../packs/ElectoralBP/scripts/engine/wartable.js";
-import { fillBlock, edgeBlock, FRONT_BLOCK, MARKERS, TERRAIN, UNKNOWN_BLOCK, classify } from "../packs/ElectoralBP/scripts/data/mapblocks.js";
+import { paintSquare, fillRect, floodFill, ownerAt, transferRegion, neighbours, centroids, reassign } from "../packs/ElectoralBP/scripts/engine/territory.js";
+import * as MV from "../packs/ElectoralBP/scripts/engine/mapview.js";
+import { blockColor, seeThrough } from "../packs/ElectoralBP/scripts/data/blockcolors.js";
+import { fontText, textWidth } from "../packs/ElectoralBP/scripts/engine/pixelfont.js";
 import { ensureEconomy, runEconomyTurn, policyAppeal } from "../packs/ElectoralBP/scripts/engine/economy.js";
 import { spawnSituation, respond, respondCounter, advanceSituations, ruleDispute, termRecord } from "../packs/ElectoralBP/scripts/engine/situations.js";
 import { runNationTurn } from "../packs/ElectoralBP/scripts/engine/turns.js";
@@ -21,36 +22,82 @@ function twoNations(seed = 1) {
   const s = newState();
   const { n: baza, cands } = buildNation(s, "democracy", seed, "Baza");
   const { n: gorg } = buildNation(s, "democracy", seed + 1, "Gorgonzola");
+  baza.color = "§9";
+  gorg.color = "§6";
   // Baza owns x 0..9, Gorgonzola x 10..19, one county per 2-column strip
   baza.regions.forEach((r, i) => fillRect(s, [i * 2, 0], [i * 2 + 1, 9], r.id));
   gorg.regions.forEach((r, i) => fillRect(s, [10 + i * 2, 0], [10 + i * 2 + 1, 9], r.id));
   return { s, baza, gorg, cands };
 }
 
-test("borders: paint, render from every perspective, hand a city over", () => {
+// a little world: water west of x=0, forest below z=0, everything else unexplored
+const fakeTerrain = {
+  color: (cx, cz) => (cx < 0 && cx >= -20 ? MV.pack(...blockColor("minecraft:water")) : cz < 0 && cz >= -10 ? MV.pack(...blockColor("minecraft:oak_leaves")) : -1),
+  height: (cx, cz) => (cx < 0 && cx >= -20 ? 62 : cz < 0 && cz >= -10 ? 70 + (cx % 3) : null),
+};
+
+function drawn(s, view) {
+  const frame = MV.newFrame(view);
+  MV.finish(MV.drawBase(s, fakeTerrain, frame));
+  return frame;
+}
+
+test("borders: paint, draw the map from every perspective, hand a city over", () => {
   const { s, baza, gorg } = twoNations();
   assert.equal(ownerAt(s, 0, 0), baza.regions[0].id);
-  const table = { x0: 100, y: 63, z0: 200, w: 24, h: 10, cx: 10, cz: 5, zoom: 1, persp: null };
-  const terrain = { "-2,0": classify("minecraft:water", 62), "-2,1": classify("minecraft:oak_leaves", 70) };
-  const world = planTable(s, terrain, table);
-  assert.equal(world.floor.length, 240);
-  const blocks = new Set(world.floor);
-  assert.ok(blocks.has(fillBlock(baza.color)) && blocks.has(edgeBlock(baza.color)), "countries in their own colour, with outlines");
-  assert.ok(blocks.has(TERRAIN.w.block) && blocks.has(TERRAIN.f.block), "explored terrain shows as water and forest");
-  assert.ok(blocks.has(UNKNOWN_BLOCK), "unexplored land is fogged");
-  assert.ok(world.top.every((t) => t === null), "the world view has no situation markers");
-  assert.ok(world.labels.some((l) => l.text.includes("BAZA")) && world.labels.some((l) => l.text.includes(baza.regions[0].name)), "country and city labels");
+  // Baza's land is chunks x 0..9, z 0..9 = blocks 0..159
+  const view = { x: 160, z: 80, zoom: 2, mode: "political", persp: null };
+  const frame = drawn(s, view);
+  const at = (f, x, z) => {
+    const { i, j } = MV.worldToPixel(f.view, x, z);
+    return f.pix[j * MV.W + i];
+  };
+  assert.deepEqual(MV.worldToPixel(view, MV.pixelToWorld(view, 37, 21).x, MV.pixelToWorld(view, 37, 21).z), { i: 37, j: 21 });
+  const inside = at(frame, 40, 80);
+  assert.notEqual(inside, at(frame, 200, 80), "two countries in two colours");
+  const fogTint = [0x1a1c22, 0x20232b].map((f) => MV.mix(MV.hex(f), MV.formatColor(baza.color), 0.6));
+  assert.ok(fogTint.includes(inside), "unexplored land still shows the owner's colour");
+  assert.equal(at(frame, -10, 80), MV.pack(...blockColor("minecraft:water")), "explored water shows as water");
+  assert.notEqual(at(frame, 300, -4), at(frame, 330, 163), "explored forest differs from fog");
+  // the border between Baza and Gorgonzola (x = 160) is drawn darker than the land either side
+  const edge = at(frame, 159, 80);
+  assert.ok(MV.R(edge) + MV.Gc(edge) + MV.B(edge) < MV.R(inside) + MV.Gc(inside) + MV.B(inside), "country borders are darker");
+  // names and situation markers
+  const deco = MV.decorations(s, frame);
+  assert.ok(deco.length > 50, "country and city names are written on the map");
   setStance(s, baza.id, gorg.id, "war");
   const { sit } = spawnSituation(s, baza, createRng(1), { tplId: "plague", regionIds: [baza.regions[1].id] });
   sit.severity = 4.5;
-  const mine = planTable(s, terrain, { ...table, persp: baza.id });
-  assert.ok(mine.floor.includes(fillBlock("§a")), "home is green");
-  assert.ok(mine.floor.includes(fillBlock("§c")) || mine.floor.includes(edgeBlock("§c")), "the enemy is red");
-  assert.ok(mine.floor.includes(FRONT_BLOCK), "war front line shown");
-  assert.ok(mine.top.includes(MARKERS[2]), "critical situation marker in a nation's view");
-  const zoomed = planTable(s, terrain, { ...table, zoom: 4 });
-  assert.ok(zoomed.floor.some((b) => b === fillBlock(baza.color) || b === edgeBlock(baza.color)), "zoomed out still shows land");
-  assert.equal(computeCells(s, { cx: 10, cz: 5, zoom: 1, w: 24, h: 10 })[5][4].owner, ownerAt(s, 2, 5));
+  const mine = drawn(s, { ...view, mode: "diplomatic", persp: baza.id });
+  const home = at(mine, 40, 80);
+  const enemy = at(mine, 250, 80);
+  assert.ok(MV.Gc(home) > MV.R(home), "home is green");
+  assert.ok(MV.R(enemy) > MV.Gc(enemy), "the enemy is red");
+  const front = at(mine, 159, 80);
+  assert.ok([MV.hex(0xe02020), MV.hex(0x200808)].includes(front), "war front line shown");
+  const markers = MV.decorations(s, mine).filter((p) => p.color === MV.hex(0xff2020));
+  assert.ok(markers.length >= 4, "critical situation marker in a nation's view");
+  assert.equal(MV.decorations(s, frame).filter((p) => p.color === MV.hex(0xff2020)).length, 0, "no markers in the world view");
+  const terrainOnly = drawn(s, { ...view, mode: "terrain" });
+  assert.equal(at(terrainOnly, -10, 80), at(frame, -10, 80));
+  assert.notEqual(at(terrainOnly, 40, 80), inside, "terrain view drops the country fill");
+  // the whole screen is valid glyph text
+  const text = MV.compose(frame, [deco, MV.cursorPixels(90, 40, [80, 30, 100, 50])], ["PAINT BAZA", "WORLD 1:2"], ["BAZA - SOMEWHERE", "40 80"]);
+  assert.ok(text.startsWith(MV.HEADER));
+  const rows = text.slice(MV.HEADER.length).split("\n");
+  assert.equal(rows.length, MV.H);
+  for (const r of rows) {
+    assert.equal(r.length, MV.W);
+    for (const ch of r) {
+      const c = ch.charCodeAt(0);
+      assert.ok(c >> 8 >= 0xe1 && c >> 8 <= 0xf0 && (c & 15) >= 1 && (c & 15) <= 14 && ((c >> 4) & 15) >= 1 && ((c >> 4) & 15) <= 14, `bad glyph ${c.toString(16)}`);
+    }
+  }
+  // a partial redraw after painting matches a full redraw
+  paintSquare(s, 3, 3, 1, gorg.regions[0].id);
+  MV.finish(MV.drawBase(s, fakeTerrain, frame, MV.chunkBox(view, 2, 2, 4, 4)));
+  const full = drawn(s, view);
+  assert.deepEqual([...frame.pix], [...full.pix], "incremental redraw = full redraw");
   // neighbours: last Baza county touches first Gorgonzola county
   assert.ok(neighbours(s, baza.regions[4].id).has(gorg.regions[0].id));
   // hand Baza's border county to Gorgonzola - its land goes with it
@@ -62,6 +109,24 @@ test("borders: paint, render from every perspective, hand a city over", () => {
   assert.ok(c[city.id]);
   assert.equal(reassign(s, city.id, null), 20, "erasing a county clears its land");
   assert.equal(paintSquare(s, 50, 50, 1, `n:${baza.id}`), 9);
+  // paint bucket fills the joined patch only, inside the box
+  assert.equal(floodFill(s, 9, 5, `n:${gorg.id}`, () => true, [8, 0, 9, 9]), 20, "the erased strip refills");
+  assert.equal(ownerAt(s, 8, 0), `n:${gorg.id}`);
+  assert.equal(floodFill(s, 100, 100, baza.regions[0].id, () => true, [95, 95, 104, 104]), 100, "unclaimed land fills up to the box");
+  assert.equal(floodFill(s, 0, 0, null, () => false), 0, "no rights, no fill");
+});
+
+test("map pieces: block colours, see-through plants, pixel font", () => {
+  const grass = blockColor("minecraft:grass_block");
+  assert.ok(grass[1] > grass[0] && grass[1] > grass[2], "grass is green");
+  assert.ok(blockColor("minecraft:water")[2] > 0.6, "water is blue");
+  assert.ok(blockColor("minecraft:red_wool")[0] > 0.5 && blockColor("minecraft:red_wool")[1] < 0.3, "dyed blocks take their colour");
+  assert.ok(blockColor("somemod:weird_block").every((v) => v >= 0 && v <= 1), "unknown blocks get a colour");
+  assert.ok(seeThrough("minecraft:short_grass") && seeThrough("minecraft:poppy") && !seeThrough("minecraft:grass_block") && !seeThrough("minecraft:oak_leaves"));
+  assert.equal(fontText("Baza §cÉire"), "BAZA EIRE");
+  assert.equal(textWidth("ABC"), 11);
+  assert.equal(MV.glyph(MV.pack(1, 1, 1)), String.fromCharCode(0xf0ee), "white is the last page, row and column 14");
+  assert.equal(MV.glyph(0), String.fromCharCode(0xe111), "black avoids the edge rows");
 });
 
 test("economy: taxes fill the treasury, war and debt hurt, groups notice", () => {

@@ -5,8 +5,7 @@ import { world, DisplaySlotId, ObjectiveSortOrder } from "@minecraft/server";
 import { createRng, hashSeed } from "../core/random.js";
 import { ensureEconomy } from "../engine/economy.js";
 import { runNationTurn } from "../engine/turns.js";
-import { paintTick } from "./map.js";
-import { exploreTick, renderAll } from "./wartable.js";
+import { inMapView } from "./mapscreen.js";
 import { beginCount, liveView, tickNight } from "../engine/night.js";
 import { getState } from "../core/storage.js";
 import { announce, commit } from "./nav.js";
@@ -91,6 +90,14 @@ function updateSidebar(view) {
   }
 }
 
+function sidebarLeftOver() {
+  try {
+    return !!world.scoreboard.getObjective(SIDEBAR);
+  } catch {
+    return false;
+  }
+}
+
 function clearSidebar() {
   try {
     if (world.scoreboard.getObjective(SIDEBAR)) world.scoreboard.removeObjective(SIDEBAR);
@@ -101,28 +108,11 @@ function clearSidebar() {
   sidebarKey = "";
 }
 
-let mapDirty = false;
-let lastTableRefresh = 0;
-let lastMapSave = 0;
 const turnRng = createRng(hashSeed("turns", Date.now()));
 
 export function tick(now = Date.now()) {
   const state = getState();
   let changed = false;
-  // walk-to-paint borders (saved every few seconds, not every step)
-  if (paintTick(world) > 0) mapDirty = true;
-  if (mapDirty && now - lastMapSave > 5000) {
-    mapDirty = false;
-    lastMapSave = now;
-    changed = true;
-    renderAll();
-  }
-  // map the land around players; keep War Tables in step with the world
-  exploreTick(now);
-  if (now - lastTableRefresh > 10000) {
-    lastTableRefresh = now;
-    renderAll();
-  }
   // economy turns: situations progress, money moves, new situations strike
   for (const nation of Object.values(state.nations)) {
     const e = ensureEconomy(nation);
@@ -175,9 +165,11 @@ export function tick(now = Date.now()) {
     if (view) {
       updateSidebar(view);
       const bar = `${nation.color}${nation.name}§r: ${view.bar}`;
-      forPlayers((p) => p.onScreenDisplay.setActionBar(bar));
+      forPlayers((p) => !inMapView(p) && p.onScreenDisplay.setActionBar(bar)); // don't wipe an open map
     }
-  } else if (sidebarShown && now >= clearSidebarAt) {
+  } else if (now >= clearSidebarAt && (sidebarShown || sidebarLeftOver())) {
+    // results stay up for a minute after the night, then go - even if the
+    // scoreboard was left behind by a restart or an older version
     clearSidebar();
   }
   // the theme loops for as long as any election night is running

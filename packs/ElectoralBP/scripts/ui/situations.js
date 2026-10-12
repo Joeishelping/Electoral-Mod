@@ -46,7 +46,7 @@ export function situationsMenu(player, nation) {
   });
 }
 
-function situationPage(player, nation, sit) {
+export function situationPage(player, nation, sit) {
   return loop(player, () => {
     const state = S();
     if (!(nation.situations || []).includes(sit)) return null;

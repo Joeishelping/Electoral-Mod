@@ -2,7 +2,12 @@
 
 const props = new Map();
 export const _messages = [];
-export const _hooks = { startup: [], scriptEvent: [], worldLoad: [], interval: [], playerSpawn: [] };
+export const _hooks = { startup: [], scriptEvent: [], worldLoad: [], interval: [], playerSpawn: [], itemUse: [] };
+export const InputButton = { Jump: "Jump", Sneak: "Sneak" };
+export const ButtonState = { Pressed: "Pressed", Released: "Released" };
+export const InputPermissionCategory = { Camera: 1, Movement: 2, LateralMovement: 4, Sneak: 5, Jump: 6, Mount: 7, Dismount: 8, MoveForward: 9, MoveBackward: 10, MoveLeft: 11, MoveRight: 12 };
+export const CommandPermissionLevel = { Any: 0, GameDirectors: 1, Admin: 2, Host: 3, Owner: 4 };
+export const CustomCommandStatus = { Success: "Success", Failure: "Failure" };
 export const _players = [];
 
 export const DisplaySlotId = { Sidebar: "sidebar", List: "list", BelowName: "belowname" };
@@ -36,6 +41,7 @@ function makeBlock(x, y, z) {
     get typeId() { return _blocks.get(k) || (y === 64 ? terrainAt(x, z) : "minecraft:air"); },
     get isAir() { return this.typeId === "minecraft:air"; },
     location: { x, y, z },
+    below: (n = 1) => makeBlock(x, y - n, z),
     setType(t) {
       if (typeof t !== "string" || !t.startsWith("minecraft:")) throw new Error(`bad block type ${t}`);
       _blocks.set(k, t);
@@ -65,6 +71,7 @@ export const world = {
   getDimension: () => _overworld,
   scoreboard,
   getDynamicProperty: (k) => props.get(k),
+  getDynamicPropertyIds: () => [...props.keys()],
   setDynamicProperty: (k, v) => {
     if (v === undefined) props.delete(k);
     else {
@@ -74,7 +81,7 @@ export const world = {
   },
   sendMessage: (m) => _messages.push(m),
   getPlayers: ({ name } = {}) => _players.filter((p) => !name || p.name === name),
-  afterEvents: { worldLoad: { subscribe: (cb) => _hooks.worldLoad.push(cb) }, playerSpawn: { subscribe: (cb) => _hooks.playerSpawn.push(cb) } },
+  afterEvents: { worldLoad: { subscribe: (cb) => _hooks.worldLoad.push(cb) }, playerSpawn: { subscribe: (cb) => _hooks.playerSpawn.push(cb) }, itemUse: { subscribe: (cb) => _hooks.itemUse.push(cb) } },
 };
 
 export const system = {

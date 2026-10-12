@@ -80,21 +80,20 @@ function makePlayer(rng, budget, admin = true) {
   return player;
 }
 
-test("main.js registers the block, script event and ticker", async () => {
+test("main.js registers the block, map command, map item, script event and tickers", async () => {
   await import("../packs/ElectoralBP/scripts/main.js");
   let registered = null;
-  let item = null;
+  let command = null;
   for (const cb of _hooks.startup) cb({
     blockComponentRegistry: { registerCustomComponent: (name, comp) => (registered = { name, comp }) },
-    itemComponentRegistry: { registerCustomComponent: (name, comp) => (item = { name, comp }) },
+    customCommandRegistry: { registerCommand: (def, fn) => (command = { def, fn }) },
   });
   assert.equal(registered.name, "electoral:board_table");
-  assert.equal(item.name, "electoral:map_brush");
-  assert.equal(typeof item.comp.onUse, "function");
-  assert.equal(typeof item.comp.onUseOn, "function");
+  assert.equal(command.def.name, "electoral:map");
+  assert.equal(_hooks.itemUse.length, 1, "the World Map item opens the map");
   assert.equal(_hooks.scriptEvent.length, 1);
   for (const cb of _hooks.worldLoad) cb();
-  assert.equal(_hooks.interval.length, 1);
+  assert.equal(_hooks.interval.length, 2, "board ticker + map ticker");
   assert.equal(_hooks.playerSpawn.length, 1);
 });
 
@@ -120,6 +119,13 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   for (let session = 0; session < 900; session++) {
     const rng = createRng(1000 + session);
     if (Object.keys(getState().nations).length < 3) for (const g of GOVERNMENTS.slice(0, 4)) buildNation(getState(), g.id, session + 1, g.name);
+    if (session % 50 === 0 && !(getState().disputes || []).some((d) => d.status === "open")) {
+      // keep a dispute waiting so the admin's Ruling screen stays reachable
+      const ns = Object.values(getState().nations).filter((x) => x.regions.length);
+      const d2 = ns.length > 1 && spawnSituation(getState(), ns[0], srng, { tplId: "deposit" });
+      const c2 = d2 && ns.flatMap((x) => x.situations).find((c) => c.kind === "counter" && c.originSitId === d2.sit.id);
+      if (c2) respondCounter(getState(), getState().nations[c2.nationId], c2, 1, srng);
+    }
     const player = makePlayer(rng, rng.int(10, 120), session % 7 !== 0);
     _players.length = 0;
     _players.push(player);
@@ -134,15 +140,12 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
     JSON.parse(JSON.stringify(getState()));
   }
   for (const m of _messages) assert.doesNotMatch(String(m), BAD, `chat: ${m}`);
-  await new Promise((r) => setTimeout(r, 50)); // let block-placing jobs finish
-  assert.ok(_blocks.size > 100, `War Tables were built out of blocks (${_blocks.size})`);
-  for (const e of _entities) assert.doesNotMatch(e.nameTag, BAD, `label: ${e.nameTag}`);
   saveState();
   assert.ok(forms > 2000, `explored ${forms} forms`);
   assert.ok(JSON.parse(_props.get("electoral:state:meta")).count >= 1);
   const chat = _messages.join("\n");
   for (const must of ["closed", "first returns", "RESULT"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
-  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government", "World Map", "War Table", "Build a War Table", "Map Brush", "Paint by Walking", "Economy", "Taxes & Tariffs", "Budget Allocation", "Response", "Our Move", "Ruling", "Trigger a Situation", "Crisis Record", "Jump To", "Whose View?"]) assert.ok(titles.has(must), `reached screen: ${must}`);
+  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government", "Economy", "Taxes & Tariffs", "Budget Allocation", "Response", "Our Move", "Ruling", "Trigger a Situation", "Crisis Record"]) assert.ok(titles.has(must), `reached screen: ${must}`);
   if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
 });
 
@@ -170,34 +173,96 @@ test("the election-night theme loops during the night and stops after", async ()
   assert.equal(listener.music, null, "the theme stops when the night is over");
 });
 
-test("painting on a War Table with the Map Brush claims land and updates the blocks", async () => {
-  const { buildTable, brushOn, brushes, exploreTick, tables } = await import("../packs/ElectoralBP/scripts/ui/wartable.js");
-  const { getTerrain } = await import("../packs/ElectoralBP/scripts/core/storage.js");
+test("the map screen: cursor, painting, zoom, inspecting, the menu and closing", async () => {
+  const MS = await import("../packs/ElectoralBP/scripts/ui/mapscreen.js");
+  const { exploreTick } = await import("../packs/ElectoralBP/scripts/ui/explore.js");
+  const { terrain } = await import("../packs/ElectoralBP/scripts/core/terrain.js");
   const { ownerAt } = await import("../packs/ElectoralBP/scripts/engine/territory.js");
-  const { fillBlock } = await import("../packs/ElectoralBP/scripts/data/mapblocks.js");
+  const { HEADER, W, MH } = await import("../packs/ElectoralBP/scripts/engine/mapview.js");
   const state = getState();
   const { n } = buildNation(state, "democracy", 77, "Baza");
-  const admin = makePlayer(createRng(2), 0);
-  admin.id = "painter";
-  admin.location = { x: 5000, y: 65, z: 5000 };
+  const player = makePlayer(createRng(2), 1000);
+  player.id = "mapper";
+  player.location = { x: 5000, y: 65, z: 5000 };
+  player.isValid = true;
+  player.selectedSlotIndex = 0;
+  const input = { mv: { x: 0, y: 0 }, jump: false, sneak: false };
+  player.inputInfo = { getMovementVector: () => input.mv, getButtonState: (b) => ((b === "Jump" ? input.jump : input.sneak) ? "Pressed" : "Released") };
+  const locked = new Map();
+  player.inputPermissions = { setPermissionCategory: (c, on) => locked.set(c, on) };
+  const dyn = new Map();
+  player.getDynamicProperty = (k) => dyn.get(k);
+  player.setDynamicProperty = (k, v) => (v === undefined ? dyn.delete(k) : dyn.set(k, v));
+  const bars = [];
+  player.onScreenDisplay.setActionBar = (t) => bars.push(t);
   _players.length = 0;
-  _players.push(admin);
-  for (let i = 0; i < 60; i++) exploreTick(Date.now() + i * 40000); // players reveal terrain as they move
-  assert.ok(Object.keys(getTerrain()).length > 20, "terrain explored around the player");
-  const table = buildTable(admin, 0);
-  assert.ok(tables().includes(table));
-  await new Promise((r) => setTimeout(r, 50));
+  _players.push(player);
+  // walking around maps the land
+  for (let i = 0; i < 80; i++) exploreTick(Date.now());
+  assert.ok(terrain.known(1250, 1250), "the land under the player is mapped");
+  const settle = async (ticks) => {
+    for (let i = 0; i < ticks; i++) {
+      MS.mapTick();
+      await new Promise((r) => setImmediate(r));
+    }
+  };
+  MS.openMapView(player);
+  assert.ok(MS.inMapView(player));
+  assert.ok([...locked.values()].every((v) => v === false), "the player can't walk or look around while the map is open");
+  await settle(30);
+  const frame = bars.at(-1);
+  assert.ok(frame.startsWith(HEADER), "the map is on screen");
+  assert.equal(frame.split("\n").length, 100);
+  // steer the cursor left with the movement keys (+x = left)
+  const before = bars.length;
+  input.mv = { x: 1, y: 0 };
+  await settle(10);
+  input.mv = { x: 0, y: 0 };
+  assert.ok(bars.length > before, "moving the cursor redraws the screen");
+  // paint: pick a brush through the menu, then Jump
   const city = n.regions[0];
-  brushes.set(admin.id, { target: city.id, label: city.name, radius: 1 });
-  const square = _overworld.getBlock({ x: table.x0 + 10, y: table.y, z: table.z0 + 8 });
-  brushOn(admin, square);
-  await new Promise((r) => setTimeout(r, 50));
-  // the square covers zoom x zoom chunks of the real world
-  const chunkX = table.cx - Math.floor(table.w / 2) * table.zoom + 10 * table.zoom;
-  const chunkZ = table.cz - Math.floor(table.h / 2) * table.zoom + 8 * table.zoom;
-  assert.equal(ownerAt(state, chunkX, chunkZ), city.id, "the land under that square now belongs to the city");
-  const placed = _overworld.getBlock({ x: table.x0 + 10, y: table.y, z: table.z0 + 8 }).typeId;
-  assert.ok(placed.includes(fillBlock(n.color).split(":")[1].split("_")[0]), `the table shows the country's colour (${placed})`);
-  const labels = _overworld.getEntities({ type: "electoral:map_label", tags: [`table_${table.id}`] });
-  assert.ok(labels.some((e) => e.nameTag.includes(city.name)), "the city's name floats over the table");
+  player.respond = async (form) => {
+    if (form.kind === "action") return form.buttons.findIndex((b) => b.includes("Choose What to Paint") || b.includes("Brush:"));
+    return form.fields.map((f) => (f.type === "dropdown" ? Math.max(0, f.items.findIndex((x) => x.includes(city.name))) : f.type === "slider" ? 1 : f.value));
+  };
+  input.sneak = true;
+  await settle(2);
+  input.sneak = false;
+  await settle(10);
+  player.respond = async () => null; // leave the menu
+  await settle(5);
+  input.jump = true;
+  await settle(3);
+  input.jump = false;
+  await settle(3);
+  const loc = MS._cursor(player);
+  assert.equal(ownerAt(state, Math.floor(loc.x / 16), Math.floor(loc.z / 16)), city.id, "Jump painted the land under the cursor");
+  // scroll the hotbar: zoom out, and the slot snaps back
+  const z0 = MS._view(player).zoom;
+  player.selectedSlotIndex = 1;
+  await settle(2);
+  assert.equal(MS._view(player).zoom, z0 * 2);
+  assert.equal(player.selectedSlotIndex, 0);
+  // the election ticker leaves an open map alone
+  bars.length = 0;
+  tick(Date.now());
+  assert.ok(bars.every((b) => b.startsWith(HEADER)));
+  // Sneak > Close Map gives the controls back
+  player.respond = async (form) => (form.kind === "action" ? form.buttons.findIndex((b) => b.includes("Close Map")) : null);
+  input.sneak = true;
+  await settle(2);
+  input.sneak = false;
+  await settle(5);
+  assert.ok(!MS.inMapView(player), "closed");
+  assert.ok([...locked.values()].every((v) => v === true), "controls are back");
+  assert.equal(W * MH > 0, true);
+});
+
+test("leftover election results leave the screen after the night", async () => {
+  const { world } = await import("@minecraft/server");
+  const state = getState();
+  for (const nn of Object.values(state.nations)) nn.count = null;
+  if (!world.scoreboard.getObjective("electoral_live")) world.scoreboard.addObjective("electoral_live", "Old results");
+  tick(Date.now() + 10 * 60000);
+  assert.equal(world.scoreboard.getObjective("electoral_live"), undefined, "the sidebar is gone");
 });

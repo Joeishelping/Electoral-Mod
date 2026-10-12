@@ -247,7 +247,7 @@ async function editCounty(player, nation, region) {
   commit();
 }
 
-function countyMenu(player, nation, region) {
+export function countyMenu(player, nation, region) {
   return loop(player, () => {
     if (!nation.regions.includes(region)) return null;
     return {

@@ -2,7 +2,7 @@
 
 A Minecraft Bedrock add-on for political roleplay servers. A **Board Table** block runs elections for as many nations as you like. You run the countries; the board runs the vote and then plays out a live **election night**, about 20 minutes of results streaming into chat with a scoreboard on everyone's screen.
 
-Requires Minecraft Bedrock **1.21.90 or newer**. No Beta APIs needed.
+Requires Minecraft Bedrock **1.21.100 or newer** (tested to load on the 1.26.52 dedicated server). No Beta APIs needed.
 
 ## Install
 
@@ -86,24 +86,28 @@ Every interest group in every county scores every candidate on:
 
 Votes then include random swings at the national, county and group level, plus that election's surprises. Results show why each county went the way it did, and how every group voted.
 
-## World map: the War Table
+## World map
 
-The world map is a **War Table**: a map of your actual world, built out of blocks on the floor of a room, like the map in a grand-strategy game.
+A full-screen map of your real world, drawn over the game like a grand-strategy map: the terrain players have explored, every country in its colour, city borders, names, war fronts and situation markers. Everything is done inside the map screen.
 
-- **Building one:** an admin stands in the middle of an empty floor and picks Board Table → World Map → **Build a War Table Here**. Sizes go from 24×16 up to 64×48 blocks, and the floor is replaced by the map.
-- **Real terrain:** water, grassland, forest, desert, badlands, snow, ice, mountains, swamp and settlements, read from the real world. The map reveals itself as players explore (dark tiles are unexplored), and an admin can **Map the Terrain Around Me** to fill in everything loaded at once.
-- **Territories:** each country is solid concrete in its color, with wool outlines between cities. Floating name labels mark countries and cities.
-- **Views:**
-  - **World view:** every country in its own color, with no markers.
-  - **A country's view:** home in lime, allies blue, friends and trade partners light blue, rivals orange, enemies red, a redstone **front line** where the country's land meets an enemy at war, and its situations marked with a torch, lantern or redstone torch (minor, serious, critical) or an end rod (opportunity).
-- **Steering:** from the Board Table you can scroll north, south, east and west, zoom (each square is 1 to 64 chunks), centre on yourself, show every country, jump to any country or city, and switch views. "Map: Our View" on a country's page turns the nearest table to that country.
+- **Open it:** Board Table → **World Map**, use the **World Map** item (craft paper + compass, or get one from the map menu), or type `/electoral:map`. Use the item again to close the map.
+- **While it's open you stand still.** Your controls steer the map instead:
+  - **Move keys / left stick** – move the cursor. Push against the edge to scroll the map.
+  - **Jump** – use the current tool on the spot under the cursor.
+  - **Sneak** – the map menu (tools, what to paint, map style, zoom, go to, close).
+  - **Scroll the hotbar** – zoom in and out (1 pixel = 1 to 128 blocks).
+- **Tools:**
+  - *Look & Inspect* (everyone): Jump on a place to see who owns it, the county's people and situations, and act on them (respond to a situation, manage the county, hand it to another country, unclaim).
+  - *Paint Brush*: hold Jump and move to paint the chosen country or city (or the eraser). Pick what to paint and the brush size from the menu.
+  - *Rectangle*: Jump on one corner, then the other.
+  - *Paint Bucket*: fills the joined patch of land under the cursor.
+  - *Found a City*: Jump where it goes, type its name and kind.
+- **Map styles:** World (each country in its colour), Terrain (land with borders only), or one country's view (home green, allies blue, rivals orange, enemies red, war fronts striped, and that country's situations marked).
+- The map fills in by itself as players walk around and keeps updating as things are built. Admins can map a wide area at once with **Map the Land Around Me**. Unexplored land is dark.
+- Rulers can only paint over land their own country holds; admins can paint anything.
+- `/scriptevent electoral:diag` prints a health check (API support and how fast the map draws) to chat and the server console.
 
-### Painting borders
-
-- **Map Brush** (craft it from a feather and a stick, or get one from World Map). Right-click the air to choose what to paint (a city, a country's land outside its cities, or Erase) and a brush size. Then right-click squares on the War Table to paint the real land under them.
-- **Paint by walking:** paint chunk by chunk as you walk, or mark two corners to fill a rectangle. Handy for tracing coastlines and rivers.
-- **Moving cities:** **Give to Another Country** on any county hands it over with its land, people and voting history. Disputes and situations can move cities too.
-- Admins can paint anywhere. A country's **Rulers** can paint unclaimed land and their own land.
+The map is drawn on the action bar with a custom font and HUD layout from the resource pack, so the RP must be applied. Another add-on that also changes the action bar HUD (Explorer's World Map does) can override ours; ElectoralV2's map still draws under Explorer's World Map's HUD, but its control hints won't show.
 
 ## Economy
 
