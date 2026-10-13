@@ -94,6 +94,8 @@ function fillers(state, nation, sit) {
     othercity: otherCity(state, sit),
     lobby: BLOC_BY_ID[sit.lobby]?.name || "Business Lobby",
     leader: gov.leaderTitle,
+    ruler: state.persons[nation.leaderId]?.name || `the ${gov.leaderTitle}`,
+    rival: state.persons[sit.personId]?.name || "a challenger",
   };
 }
 
@@ -114,7 +116,16 @@ export function pickTemplate(state, nation, rng) {
   const e = ensureEconomy(nation);
   const active = new Set(nation.situations.filter((s) => s.status === "active" && s.kind === "situation").map((s) => s.tpl));
   const war = others(state, nation).some((o) => getStance(state, nation.id, o.id) === "war");
-  const pool = SCENARIOS.filter((t) => !active.has(t.id) && (!t.needs || candidatesFor(state, nation, t.needs).length));
+  const gov = effectiveGov(nation).id;
+  const hasLeader = !!state.persons[nation.leaderId];
+  const hasRival = Object.values(state.persons).some((p) => p.nationId === nation.id && p.name && p.id !== nation.leaderId);
+  const pool = SCENARIOS.filter((t) =>
+    !active.has(t.id) &&
+    (!t.needs || candidatesFor(state, nation, t.needs).length) &&
+    (!t.govs || t.govs.includes(gov)) &&
+    (t.person !== "ruler" || hasLeader) &&
+    (t.person !== "rival" || hasRival) &&
+    (t.person !== "any" || hasLeader || hasRival));
   if (!pool.length) return null;
   return rng.weighted(pool, (t) => {
     let w = 1;
@@ -124,7 +135,8 @@ export function pickTemplate(state, nation, rng) {
     if (t.id === "strike") w *= nation.metrics.jobs < 40 ? 3 : 1;
     if (t.id === "riots") w *= 1 + nation.regions.reduce((s, r) => s + (r.unrest || 0), 0) / (50 * (nation.regions.length || 1));
     if (t.kind === "opportunity") w *= e.growth > 0.02 ? 1.3 : 1;
-    return w;
+    if (t.govs) w *= 1.5; // flavour for this kind of government
+    return w * (t.w ?? 1);
   });
 }
 
@@ -142,6 +154,8 @@ export function spawnSituation(state, nation, rng, opts = {}) {
   }
   const count = rng.int((tpl.cities || [1, 1])[0], (tpl.cities || [1, 1])[1]);
   const regionIds = opts.regionIds?.length ? opts.regionIds : pickRegions(nation, tpl, rng, count);
+  const person = personFor(state, nation, tpl.person, rng);
+  if (tpl.person && !person) return null;
   const sit = {
     id: nextId(state, "s"),
     kind: "situation",
@@ -150,6 +164,7 @@ export function spawnSituation(state, nation, rng, opts = {}) {
     regionIds,
     otherId,
     otherCityId: otherId ? nearestCity(state, state.nations[otherId], regionIds) : null,
+    personId: person?.id || null,
     lobby: rng.pick(BLOCS).id,
     severity: tpl.severity || 2,
     startSeverity: tpl.severity || 2,
@@ -234,8 +249,31 @@ export function respond(state, nation, sit, choice, priority) {
 
 // ---------- effects ----------
 
-function applyFx(state, nation, fx, otherId, regionIds, rng, lines) {
+/** People a situation can be about: the ruler, or someone else running in this country. */
+function personFor(state, nation, who, rng) {
+  if (!who) return null;
+  const leader = state.persons[nation.leaderId] || null;
+  if (who === "ruler") return leader;
+  const pool = Object.values(state.persons).filter((p) => p.nationId === nation.id && p.name && p.id !== nation.leaderId);
+  if (who === "rival") return pool.length ? rng.pick(pool) : null;
+  return pool.length || leader ? rng.pick(leader ? [...pool, leader] : pool) : null;
+}
+
+function changePerson(person, changes, lines) {
+  if (!person || !changes) return;
+  const said = [];
+  for (const [k, v] of Object.entries(changes)) {
+    if (typeof person[k] !== "number") continue;
+    person[k] = clamp(person[k] + v, 0, 100);
+    said.push(`${k} ${v > 0 ? "+" : ""}${v}`);
+  }
+  if (said.length) lines.push(`§7   ${person.name}: ${said.join(", ")}`);
+}
+
+function applyFx(state, nation, fx, otherId, regionIds, rng, lines, personId = null) {
   if (!fx) return;
+  if (fx.person) changePerson(state.persons[personId], fx.person, lines);
+  if (fx.ruler) changePerson(state.persons[nation.leaderId], fx.ruler, lines);
   const e = ensureEconomy(nation);
   const gdp = e.gdp || 1000;
   if (fx.treasury) e.treasury = (e.treasury || 0) + fx.treasury * gdp;
@@ -298,7 +336,7 @@ export function resolveSituation(state, nation, sit, outcome, rng) {
   const cities = fillers(state, nation, sit).city;
   if (outcome === "success" && opt) {
     if (held) sit.heldFx = opt.fx; // rewards wait for the dispute ruling
-    else applyFx(state, nation, opt.fx, sit.otherId, sit.regionIds, rng, lines);
+    else applyFx(state, nation, opt.fx, sit.otherId, sit.regionIds, rng, lines, sit.personId);
     remember(nation, opt.groups, QUALITY[grade]);
   } else if (outcome === "failure") {
     const e = ensureEconomy(nation);

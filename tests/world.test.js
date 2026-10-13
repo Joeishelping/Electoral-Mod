@@ -56,12 +56,14 @@ test("economy: taxes fill the treasury, war and debt hurt, groups notice", () =>
 test("every scenario can be spawned, answered, and resolved", () => {
   for (const tpl of SCENARIOS) {
     const { s, baza, gorg } = twoNations(4);
-    setStance(s, baza.id, gorg.id, tpl.needs === "war" ? "war" : tpl.needs === "enemy" ? "rival" : "friendly");
+    baza.leaderId = Object.values(s.persons).find((p) => p.nationId === baza.id).id;
+    setStance(s, baza.id, gorg.id, tpl.needs === "war" ? "war" : tpl.needs === "enemy" ? "rival" : tpl.needs === "ally" ? "alliance" : "friendly");
     const rng = createRng(7);
     const res = spawnSituation(s, baza, rng, { tplId: tpl.id });
     assert.ok(res, `${tpl.id} spawned`);
     const sit = res.sit;
     assert.doesNotMatch(sit.text, /\{|undefined/, `${tpl.id} text filled: ${sit.text}`);
+    assert.doesNotMatch(sit.title, /\{|undefined/, `${tpl.id} title filled: ${sit.title}`);
     assert.equal(tpl.options.length, 3, `${tpl.id} has three options`);
     respond(s, baza, sit, 0, 5);
     for (let i = 0; i < 12 && sit.status === "active"; i++) {
@@ -76,6 +78,30 @@ test("every scenario can be spawned, answered, and resolved", () => {
     }
     assert.ok(baza.record.length >= 1 || sit.status === "expired", `${tpl.id} recorded`);
     for (const line of res.lines) assert.doesNotMatch(line, /undefined|NaN|\{/);
+  }
+});
+
+test("scenario data only uses real groups, sliders, budget lines, county types and governments", async () => {
+  const { BLOCS, REGION_TEMPLATES } = await import("../packs/ElectoralBP/scripts/data/blocs.js");
+  const { METRIC_IDS } = await import("../packs/ElectoralBP/scripts/data/metrics.js");
+  const { BUDGET_IDS } = await import("../packs/ElectoralBP/scripts/engine/economy.js");
+  const { GOVERNMENTS } = await import("../packs/ElectoralBP/scripts/data/governments.js");
+  const groups = new Set(BLOCS.map((b) => b.id));
+  const types = new Set(REGION_TEMPLATES.map((t) => t.id));
+  const govs = new Set(GOVERNMENTS.map((g) => g.id));
+  const personKeys = new Set(["popularity", "charisma", "competence", "integrity", "funds"]);
+  assert.ok(SCENARIOS.length >= 200, `plenty of scenarios (${SCENARIOS.length})`);
+  for (const t of SCENARIOS) {
+    for (const p of t.prefer || []) assert.ok(types.has(p), `${t.id}: county type ${p}`);
+    for (const g of t.govs || []) assert.ok(govs.has(g), `${t.id}: government ${g}`);
+    for (const m of Object.keys(t.metrics || {})) assert.ok(METRIC_IDS.includes(m), `${t.id}: slider ${m}`);
+    for (const o of [...t.options, ...(t.counter?.options || [])]) {
+      for (const g of Object.keys(o.groups)) assert.ok(groups.has(g), `${t.id}: group ${g}`);
+      for (const m of Object.keys(o.fx.metrics || {})) assert.ok(METRIC_IDS.includes(m), `${t.id}: slider ${m}`);
+      for (const k of Object.keys(o.fx.stock || {})) assert.ok(BUDGET_IDS.includes(k), `${t.id}: budget ${k}`);
+      for (const k of [...Object.keys(o.fx.person || {}), ...Object.keys(o.fx.ruler || {})]) assert.ok(personKeys.has(k), `${t.id}: person stat ${k}`);
+      if (o.fx.person) assert.ok(t.person, `${t.id}: changes a person but names none`);
+    }
   }
 });
 
@@ -168,4 +194,22 @@ test("situations name the real counties and the other country's real cities", ()
       assert.ok(sit.text.includes("Gorgonzola"));
     }
   }
+});
+
+test("scenarios about people change the real candidates", () => {
+  const { s, baza } = twoNations(5);
+  const people = Object.values(s.persons).filter((p) => p.nationId === baza.id);
+  baza.leaderId = people[0].id;
+  const rng = createRng(3);
+  const { sit } = spawnSituation(s, baza, rng, { tplId: "rival_scandal" });
+  const rival = s.persons[sit.personId];
+  assert.ok(rival && rival.id !== baza.leaderId, "a challenger, not the ruler");
+  assert.ok(sit.text.includes(rival.name), `names them: ${sit.text}`);
+  const before = rival.popularity;
+  respond(s, baza, sit, 0, 5); // leak it to the press
+  for (let i = 0; i < 12 && sit.status === "active"; i++) {
+    ensureEconomy(baza).turn++;
+    advanceSituations(s, baza, rng);
+  }
+  assert.ok(rival.popularity < before, "the leak hurts them");
 });

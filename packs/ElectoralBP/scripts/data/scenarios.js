@@ -26,6 +26,8 @@
 //   origin    (counters) effect on the origin's situation: progress, severity,
 //             treasury, gdp
 
+import { MORE_SCENARIOS } from "./scenarios_more.js";
+
 const o = (label, desc, p = {}) => ({ label, desc, cost: 1, speed: 1, groups: {}, fx: {}, ...p });
 
 export const SCENARIOS = [
@@ -658,6 +660,8 @@ export const SCENARIOS = [
     ],
   },
 ];
+
+SCENARIOS.push(...MORE_SCENARIOS);
 
 export const SCENARIO_BY_ID = Object.fromEntries(SCENARIOS.map((s) => [s.id, s]));
 export const DO_NOTHING = { label: "Do nothing", desc: "Let it play out." };

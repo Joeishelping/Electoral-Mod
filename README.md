@@ -109,7 +109,14 @@ High tariffs strain trade partners. A country deep in debt can no longer fund cr
 
 ## Situations
 
-Situations strike a country's cities during economy turns, or an admin can trigger one. There are 44 of them, covering economy, disasters, health, unrest, crime, politics, the military, war and diplomacy. They only use names you entered: your counties, the other country, and its nearest real city. For example: "Thousands of refugees fleeing Gorgonzola's Kesh are arriving in Northvale."
+Situations strike a country's cities during economy turns, or an admin can trigger one. There are 201 of them across 31 categories:
+
+- **People and politics:** campaigns (scandals about your actual candidates, rivals surging, defections, gaffes, donors), lobbies (ultimatums, union drives, clergy, greens, farmers, veterans, students, pensioners), counties (town feuds, autonomy demands, defiant mayors, boomtowns, ghost towns), scandal and media.
+- **Land and people:** disasters and nature (volcanoes, blizzards, tsunamis, locusts, heatwaves, meteors), health (cholera, flu, mystery illnesses, addiction, cures), unrest, crime, religion, culture, society and labour.
+- **Economy and the world:** economy, trade, energy, infrastructure, science, the military, espionage, diplomacy and war.
+- **Government-specific:** court intrigue and successions for monarchies, blood feuds for clans, party purges for single-party states, coup plots for juntas, guild mergers for guild oligarchies, heresy trials for theocracies, filibusters and referendums for democracies and parliaments.
+
+They only use names you entered: your counties, your candidates and ruler, the other country, and its real cities. For example: "Thousands of refugees fleeing Gorgonzola's Kesh are arriving in Northvale." Scenarios about a person need that person to exist, and their choices change that candidate's popularity, honesty, charisma, competence or war chest.
 
 - **Responses:** each situation has its own three responses, plus **Do nothing**, and a **priority (0–5)** that costs money every turn. Neglected crises grow, escalate (an Outbreak becomes a Plague) and can spread to other cities. Opportunities expire if ignored.
 - **Counter-situations:** other countries react with their own moves. When Baza finds the deposit, Gorgonzola can invest in a joint venture, seize the deposit, or undercut Baza's exports.
