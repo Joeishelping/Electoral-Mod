@@ -2,7 +2,7 @@
 
 A Minecraft Bedrock add-on for political roleplay servers. A **Board Table** block runs elections for as many nations as you like. You run the countries; the board runs the vote and then plays out a live **election night**, about 20 minutes of results streaming into chat with a scoreboard on everyone's screen.
 
-Requires Minecraft Bedrock **1.21.100 or newer** (tested to load on the 1.26.52 dedicated server). No Beta APIs needed.
+Requires Minecraft Bedrock **1.21.90 or newer** (tested to load on the 1.26.52 dedicated server). No Beta APIs needed.
 
 ## Install
 
@@ -86,37 +86,6 @@ Every interest group in every county scores every candidate on:
 
 Votes then include random swings at the national, county and group level, plus that election's surprises. Results show why each county went the way it did, and how every group voted.
 
-## World map
-
-A full-screen map of your world, drawn over the game like a grand-strategy map: real terrain, every country in its colour, city borders, names, claims, war fronts and situations.
-
-- **Open it:** Board Table → **World Map**, use the **World Map** item (craft paper + compass), or type `/electoral:map`. Use the item again to close it.
-- **It fills itself in.** Wherever you look, the add-on loads that land for a moment behind the scenes (generating it if nobody has been there yet), reads it, and lets it go again. A screen's worth fills in within about a minute when zoomed in. Zoomed far out over brand-new land, rough colours spread out from the middle over a few minutes. Places players have already visited are quicker. "MAPPING" in the corner means it's working.
-- **You stand still while it's open.** The controls drive the map:
-  - **Move keys / stick:** move the cursor. Push against an edge to scroll.
-  - **Jump:** select the place under the cursor. While drawing, hold it to paint.
-  - **Sneak:** the map menu. While drawing, stop drawing.
-  - **Scroll the hotbar:** zoom.
-
-### Drawing borders
-Sneak → **Draw Borders**, pick your country, one of its cities, a new city, or the eraser. Then hold Jump and move. It's a paintbrush that stays the same size on screen, so zoom in to trace coastlines and rivers. Sneak when you're done. You can also select a place and pick **Draw ... Borders** or **Found a City Here**.
-
-You can paint empty land and your own. Another country's land has to be won in a war (or handed over). Admins can paint anything.
-
-### Claims and wars (CK3 style)
-Select another country's city and:
-- **Press a Claim:** your claim on that city is a casus belli. Claimed land shows with green stripes in your view, and your land others claim with red stripes.
-- **Declare War for (city):** justified if you hold a claim on it.
-- **Declare War on All of (country):** justified if you claim at least half its cities.
-- A war without a casus belli is allowed, but your country loses integrity and security at home, and every other country's relations with you sour.
-- A war ends when one side picks **Give In** (from the map, or Sneak → Wars & Claims), or when an admin rules on it under **Disputes** (attacker wins / white peace / defender holds), or rolls the dice on military strength. The winner of a city war takes the city with its land, people and voting history; conquering a whole country takes everything.
-
-Who you play as: rulers play as their own country automatically. Admins (or anyone ruling several countries) pick in the map menu.
-
-The map is drawn on the action bar with a custom font and HUD layout from the resource pack, so the RP must be applied (on servers, `texturepack-required=true`). Another add-on that changes the action bar HUD (Explorer's World Map does) can override ours.
-
-Admin checks: `/scriptevent electoral:diag` (API support and how fast the map draws) and `/scriptevent electoral:survey <x> <z> <zoom>` (fills in the map around a spot and reports how fast).
-
 ## Economy
 
 Each country runs on economy turns (every 20 minutes by default; admins can run one immediately). Its counties produce GDP, which depends on:
@@ -142,12 +111,12 @@ High tariffs strain trade partners. A country deep in debt can no longer fund cr
 
 Situations strike a country's cities during economy turns, or an admin can trigger one. There are 44 of them, covering economy, disasters, health, unrest, crime, politics, the military, war and diplomacy. They only use names you entered: your counties, the other country, and its nearest real city. For example: "Thousands of refugees fleeing Gorgonzola's Kesh are arriving in Northvale."
 
-- **Responses:** each situation has its own three responses, plus **Do nothing**, and a **priority (0–5)** that costs money every turn. Neglected crises grow, escalate (an Outbreak becomes a Plague) and can spread to neighbouring cities on the map. Opportunities expire if ignored.
+- **Responses:** each situation has its own three responses, plus **Do nothing**, and a **priority (0–5)** that costs money every turn. Neglected crises grow, escalate (an Outbreak becomes a Plague) and can spread to other cities. Opportunities expire if ignored.
 - **Counter-situations:** other countries react with their own moves. When Baza finds the deposit, Gorgonzola can invest in a joint venture, seize the deposit, or undercut Baza's exports.
   - Helping speeds Baza's recovery and improves relations.
   - Exploiting costs Baza money.
   - Escalating opens a **dispute**.
-- **Disputes and rulings:** you rule on who wins, or roll the dice using both countries' military strength. Battles, referendums and arbitration also wait for your ruling. The winner can take the city, and its land moves on the map. Rewards from a contested situation are held until the ruling.
+- **Disputes and rulings:** you rule on who wins, or roll the dice using both countries' military strength. Battles, referendums and arbitration also wait for your ruling. The winner can take the city. Rewards from a contested situation are held until the ruling.
 - **Grades:** every outcome gets a grade from A to F and goes on the country's **Crisis Record**, along with what every country did.
 - **Elections:** challengers tear into a badly handled crisis in debates, and incumbents tout the good ones. Affected counties swing for or against the incumbent. Interest groups remember which side the government took, and rally behind it or against it.
 

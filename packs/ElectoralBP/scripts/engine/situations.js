@@ -3,7 +3,6 @@
 // countries' counter-moves, disputes ruled by an admin, and a graded record of how
 // every crisis was handled - which voters remember at the next election.
 
-import { ruleWar } from "./wars.js";
 import { SCENARIOS, SCENARIO_BY_ID, DO_NOTHING, fill } from "../data/scenarios.js";
 import { BLOCS, BLOC_BY_ID } from "../data/blocs.js";
 import { effectiveGov } from "../data/governments.js";
@@ -11,7 +10,7 @@ import { createNation, getRegion, nextId, regionBlocShares } from "../core/state
 import { clamp } from "../core/random.js";
 import { getStance, setStance } from "./diplomacy.js";
 import { ensureEconomy, isBroke } from "./economy.js";
-import { centroids, neighbours, transferRegion } from "./territory.js";
+import { transferRegion } from "./territory.js";
 
 const ORDER = ["war", "rival", "tense", "neutral", "friendly", "trade", "alliance"];
 const HOSTILE = new Set(["war", "rival", "tense"]);
@@ -79,25 +78,11 @@ function otherCity(state, sit) {
   return r.name;
 }
 
+/** A city of the other country to name in the story (the same one every time for this situation). */
 function nearestCity(state, other, regionIds) {
   if (!other?.regions.length) return null;
-  const cents = centroids(state);
-  const here = regionIds.map((id) => cents[id]).filter(Boolean);
-  if (!here.length) return other.regions[0].id;
-  let best = null;
-  let bd = Infinity;
-  for (const r of other.regions) {
-    const c = cents[r.id];
-    if (!c) continue;
-    for (const h of here) {
-      const d = (c[0] - h[0]) ** 2 + (c[1] - h[1]) ** 2;
-      if (d < bd) {
-        bd = d;
-        best = r.id;
-      }
-    }
-  }
-  return best || other.regions[0].id;
+  const seed = [...regionIds.join("")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return other.regions[seed % other.regions.length].id;
 }
 
 function fillers(state, nation, sit) {
@@ -120,12 +105,7 @@ function reactorsFor(state, nation, tpl, sit, rng) {
   if (who === "other") list = sit.otherId && state.nations[sit.otherId] ? [state.nations[sit.otherId]] : [];
   else if (who === "rivals") list = all.filter((o) => HOSTILE.has(getStance(state, nation.id, o.id)));
   else if (who === "trade") list = all.filter((o) => FRIENDLY.has(getStance(state, nation.id, o.id)));
-  else if (who === "neighbours") {
-    const near = new Set();
-    for (const r of nation.regions) for (const k of neighbours(state, r.id)) near.add(k);
-    for (const k of neighbours(state, `n:${nation.id}`)) near.add(k);
-    list = all.filter((o) => near.has(`n:${o.id}`) || o.regions.some((r) => near.has(r.id)));
-  } else list = all;
+  else if (who !== "neighbours") list = all;
   if (!list.length && who !== "other") list = rng.shuffle(all).slice(0, 2);
   return rng.shuffle(list).slice(0, 3);
 }
@@ -459,7 +439,6 @@ function openRuling(state, nation, sit) {
 
 /** The admin decides a dispute. Returns chat lines. */
 export function ruleDispute(state, d, choiceIdx, rng) {
-  if (d.kind === "war") return [`§6[Ruling]§r ${d.title}: §e${d.choices[choiceIdx].label}`, ...ruleWar(state, d, choiceIdx)];
   const c = d.choices[choiceIdx];
   const origin = state.nations[d.originNationId];
   d.status = "closed";
@@ -503,7 +482,6 @@ export function ruleDispute(state, d, choiceIdx, rng) {
 
 export function rollDispute(state, d, rng) {
   const p = d.odds ?? 0.5;
-  if (d.kind === "war") return ruleDispute(state, d, rng.chance(p) ? 0 : d.choices.length - 1, rng);
   return ruleDispute(state, d, rng.chance(p) ? 0 : 1, rng);
 }
 
@@ -562,10 +540,7 @@ export function advanceSituations(state, nation, rng) {
       sit.title = fill(tpl.escalated || `Worsening ${tpl.title}`, fillers(state, nation, sit));
       out.lines.push(`${tagOf(nation)} §c§lESCALATION:§r the situation in ${fillers(state, nation, sit).city} has become a §c${sit.title}§r!`);
       if (tpl.spread && rng.chance(tpl.spread) && sit.regionIds.length < 4) {
-        const near = new Set();
-        for (const id of sit.regionIds) for (const k of neighbours(state, id)) near.add(k);
-        let pool = nation.regions.filter((r) => near.has(r.id) && !sit.regionIds.includes(r.id));
-        if (!pool.length) pool = nation.regions.filter((r) => !sit.regionIds.includes(r.id));
+        const pool = nation.regions.filter((r) => !sit.regionIds.includes(r.id));
         if (pool.length) {
           const r = rng.pick(pool);
           sit.regionIds.push(r.id);

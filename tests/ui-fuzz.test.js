@@ -11,7 +11,6 @@ import { openBoard } from "../packs/ElectoralBP/scripts/ui/board.js";
 import { tick } from "../packs/ElectoralBP/scripts/ui/ticker.js";
 import { _hooks, _messages, _players, _props, _overworld, _blocks, _entities } from "@minecraft/server";
 import { buildNation } from "./helpers.js";
-import { fillRect } from "../packs/ElectoralBP/scripts/engine/territory.js";
 import { setStance } from "../packs/ElectoralBP/scripts/engine/diplomacy.js";
 import { respondCounter, spawnSituation } from "../packs/ElectoralBP/scripts/engine/situations.js";
 
@@ -80,20 +79,14 @@ function makePlayer(rng, budget, admin = true) {
   return player;
 }
 
-test("main.js registers the block, map command, map item, script event and tickers", async () => {
+test("main.js registers the block, script event and ticker", async () => {
   await import("../packs/ElectoralBP/scripts/main.js");
   let registered = null;
-  let command = null;
-  for (const cb of _hooks.startup) cb({
-    blockComponentRegistry: { registerCustomComponent: (name, comp) => (registered = { name, comp }) },
-    customCommandRegistry: { registerCommand: (def, fn) => (command = { def, fn }) },
-  });
+  for (const cb of _hooks.startup) cb({ blockComponentRegistry: { registerCustomComponent: (name, comp) => (registered = { name, comp }) } });
   assert.equal(registered.name, "electoral:board_table");
-  assert.equal(command.def.name, "electoral:map");
-  assert.equal(_hooks.itemUse.length, 1, "the World Map item opens the map");
   assert.equal(_hooks.scriptEvent.length, 1);
   for (const cb of _hooks.worldLoad) cb();
-  assert.equal(_hooks.interval.length, 2, "board ticker + map ticker");
+  assert.equal(_hooks.interval.length, 1);
   assert.equal(_hooks.playerSpawn.length, 1);
 });
 
@@ -102,8 +95,7 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   const seedRng = createRng(99);
   const built = [];
   for (const g of GOVERNMENTS) built.push(buildNation(state, g.id, seedRng.int(1, 1e9), g.name).n);
-  // paint each nation's counties side by side, set up rivalries, wars and situations
-  built.forEach((n, k) => n.regions.forEach((r, i) => fillRect(state, [k * 10 + i * 2, 0], [k * 10 + i * 2 + 1, 9], r.id)));
+  // set up rivalries, wars and situations
   setStance(state, built[0].id, built[1].id, "war");
   setStance(state, built[0].id, built[2].id, "rival");
   setStance(state, built[0].id, built[3].id, "alliance");
@@ -171,123 +163,6 @@ test("the election-night theme loops during the night and stops after", async ()
   assert.equal(n.count, null);
   tick((t += 1000));
   assert.equal(listener.music, null, "the theme stops when the night is over");
-});
-
-test("the map screen: fills itself in, draws borders by hand, claims land and goes to war", async () => {
-  const MS = await import("../packs/ElectoralBP/scripts/ui/mapscreen.js");
-  const { terrain } = await import("../packs/ElectoralBP/scripts/core/terrain.js");
-  const { ownerAt, fillRect: fill } = await import("../packs/ElectoralBP/scripts/engine/territory.js");
-  const { ruleDispute } = await import("../packs/ElectoralBP/scripts/engine/situations.js");
-  const { HEADER } = await import("../packs/ElectoralBP/scripts/engine/mapview.js");
-  const state = getState();
-  const { n } = buildNation(state, "democracy", 77, "Baza");
-  const { n: gorg } = buildNation(state, "democracy", 78, "Gorgonzola");
-  const player = makePlayer(createRng(2), 1000);
-  player.id = "mapper";
-  player.location = { x: 5000, y: 65, z: 5000 };
-  player.isValid = true;
-  player.selectedSlotIndex = 0;
-  const input = { mv: { x: 0, y: 0 }, jump: false, sneak: false };
-  player.inputInfo = { getMovementVector: () => input.mv, getButtonState: (b) => ((b === "Jump" ? input.jump : input.sneak) ? "Pressed" : "Released") };
-  const locked = new Map();
-  player.inputPermissions = { setPermissionCategory: (c, on) => locked.set(c, on) };
-  const dyn = new Map();
-  player.getDynamicProperty = (k) => dyn.get(k);
-  player.setDynamicProperty = (k, v) => (v === undefined ? dyn.delete(k) : dyn.set(k, v));
-  const bars = [];
-  player.onScreenDisplay.setActionBar = (t) => bars.push(t);
-  _players.length = 0;
-  _players.push(player);
-  const settle = async (ticks) => {
-    for (let i = 0; i < ticks; i++) {
-      MS.mapTick();
-      await new Promise((r) => setImmediate(r));
-    }
-  };
-  const press = async (key, hold = 2) => {
-    input[key] = true;
-    await settle(hold);
-    input[key] = false;
-    await settle(4);
-  };
-  // answers forms by clicking the first button / dropdown entry containing `want`
-  const answer = (want) => async (form) => {
-    if (form.kind === "action") return form.buttons.findIndex((b) => b.includes(want));
-    if (form.kind === "message") return 0;
-    return form.fields.map((f) => (f.type === "dropdown" ? Math.max(0, f.items.findIndex((x) => x.includes(want))) : f.value));
-  };
-  MS.openMapView(player);
-  MS._session(player).actor = n.id; // playing as Baza
-  assert.ok([...locked.values()].every((v) => v === false), "the player can't walk or look around while the map is open");
-  // the map fills itself in where you look, far from any player
-  MS._session(player).view.x = 20000;
-  MS._session(player).view.z = -20000;
-  MS._session(player).needBase = true;
-  assert.ok(!terrain.known(5000, -5000));
-  await settle(200);
-  assert.ok(terrain.known(5000, -5000), "land nobody walked to is read in");
-  assert.ok(bars.at(-1).startsWith(HEADER), "the map is on screen");
-  // Sneak > Draw Borders > a city, then hold Jump and move to paint by hand
-  const city = n.regions[0];
-  player.respond = async (form) => (form.kind === "action" ? form.buttons.findIndex((b) => b.includes("Draw Borders")) : form.fields.map((f) => (f.type === "dropdown" ? f.items.findIndex((x) => x.includes(city.name)) : f.value)));
-  await press("sneak");
-  await settle(10);
-  assert.equal(MS._session(player).drawing?.target, city.id, "drawing mode with the chosen city");
-  const startAt = MS._cursor(player);
-  input.jump = true;
-  input.mv = { x: -1, y: 0 }; // stroke to the right
-  await settle(15);
-  input.jump = false;
-  input.mv = { x: 0, y: 0 };
-  const endAt = MS._cursor(player);
-  assert.ok(endAt.x > startAt.x + 20, "the cursor moved while drawing");
-  for (let x = startAt.x; x <= endAt.x; x += 8) assert.equal(ownerAt(state, Math.floor(x / 16), Math.floor(startAt.z / 16)), city.id, `the stroke is painted with no gaps (x ${x})`);
-  await press("sneak"); // Sneak stops drawing
-  assert.equal(MS._session(player).drawing, null);
-  // Gorgonzola holds land next door; select it, press a claim, then declare war for it
-  const target = gorg.regions[0];
-  const [ccx, ccz] = [Math.floor(endAt.x / 16) + 3, Math.floor(endAt.z / 16)];
-  fill(state, [ccx, ccz - 2], [ccx + 6, ccz + 2], target.id);
-  MS._session(player).ci += 3 * 16 / MS._view(player).zoom + 8;
-  await settle(2);
-  player.respond = answer("Press a Claim");
-  let clicks = 0;
-  const once = (want) => async (form) => (clicks++ === 0 ? answer(want)(form) : null);
-  player.respond = once("Press a Claim");
-  await press("jump");
-  await settle(5);
-  assert.ok((state.claims || []).some((c) => c.by === n.id && c.regionId === target.id), "Baza claims the Gorgonzolan city");
-  clicks = 0;
-  player.respond = async (form) => {
-    clicks++;
-    if (form.kind === "message") return 0; // confirm
-    return clicks === 1 ? form.buttons.findIndex((b) => b.includes(`Declare War for ${target.name}`)) : null;
-  };
-  await press("jump");
-  await settle(5);
-  const war = (state.wars || []).find((w) => w.attacker === n.id && w.defender === gorg.id && w.status === "active");
-  assert.ok(war, "war declared");
-  assert.ok(war.justified, "the claim is the casus belli");
-  const dispute = state.disputes.find((d) => d.warId === war.id);
-  assert.ok(dispute, "the admin can rule on the war");
-  ruleDispute(state, dispute, 0, createRng(1));
-  assert.ok(n.regions.includes(target), "Baza won and took the city");
-  assert.equal(ownerAt(state, ccx + 2, ccz), target.id, "its land came along");
-  // scroll the hotbar: zoom out, and the slot snaps back
-  const z0 = MS._view(player).zoom;
-  player.selectedSlotIndex = 1;
-  await settle(2);
-  assert.equal(MS._view(player).zoom, z0 * 2);
-  assert.equal(player.selectedSlotIndex, 0);
-  // the election ticker leaves an open map alone
-  bars.length = 0;
-  tick(Date.now());
-  assert.ok(bars.every((b) => b.startsWith(HEADER)));
-  // Sneak > Close Map gives the controls back
-  player.respond = answer("Close Map");
-  await press("sneak");
-  assert.ok(!MS.inMapView(player), "closed");
-  assert.ok([...locked.values()].every((v) => v === true), "controls are back");
 });
 
 test("leftover election results leave the screen after the night", async () => {

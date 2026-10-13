@@ -5,7 +5,6 @@ import { world, DisplaySlotId, ObjectiveSortOrder } from "@minecraft/server";
 import { createRng, hashSeed } from "../core/random.js";
 import { ensureEconomy } from "../engine/economy.js";
 import { runNationTurn } from "../engine/turns.js";
-import { inMapView } from "./mapscreen.js";
 import { beginCount, liveView, tickNight } from "../engine/night.js";
 import { getState } from "../core/storage.js";
 import { announce, commit } from "./nav.js";
@@ -165,7 +164,7 @@ export function tick(now = Date.now()) {
     if (view) {
       updateSidebar(view);
       const bar = `${nation.color}${nation.name}§r: ${view.bar}`;
-      forPlayers((p) => !inMapView(p) && p.onScreenDisplay.setActionBar(bar)); // don't wipe an open map
+      forPlayers((p) => p.onScreenDisplay.setActionBar(bar));
     }
   } else if (now >= clearSidebarAt && (sidebarShown || sidebarLeftOver())) {
     // results stay up for a minute after the night, then go - even if the

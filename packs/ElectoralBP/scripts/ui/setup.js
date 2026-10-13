@@ -8,7 +8,7 @@ import { COLORS, COLOR_NAMES } from "../data/names.js";
 import { createParty, createPerson, deleteNation, deletePerson, displayName, nationPersons, personLabel } from "../core/state.js";
 import { clamp, createRng } from "../core/random.js";
 import { addRegionOfType, autoApportion, seedHistoricalLean } from "../engine/generate.js";
-import { reassign, transferRegion } from "../engine/territory.js";
+import { transferRegion } from "../engine/territory.js";
 import { TERM_EVENTS } from "../data/events.js";
 import { confirm, fmt, menu, modal, notice } from "./forms.js";
 import { announce, CLOSE, commit, loop, S } from "./nav.js";
@@ -302,7 +302,6 @@ export function countyMenu(player, nation, region) {
           run: async () => {
             if (!(await confirm(player, "Delete County", `Delete ${region.name}?`, "§cDelete"))) return;
             nation.regions = nation.regions.filter((x) => x !== region);
-            reassign(S(), region.id, `n:${nation.id}`); // its land stays with the country
             autoApportion(nation);
             commit();
             return "back";

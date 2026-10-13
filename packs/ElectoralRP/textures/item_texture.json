@@ -1,7 +1,0 @@
-{
-  "resource_pack_name": "electoral",
-  "texture_name": "atlas.items",
-  "texture_data": {
-    "electoral_map_brush": { "textures": "textures/items/map_filled" }
-  }
-}

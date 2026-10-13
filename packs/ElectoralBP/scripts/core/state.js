@@ -136,14 +136,8 @@ export function relationKey(a, b) {
 
 export function deleteNation(state, nationId) {
   const nation = state.nations[nationId];
-  if (nation && state.map?.chunks) {
-    const keys = new Set([`n:${nationId}`, ...nation.regions.map((r) => r.id)]);
-    for (const [k, v] of Object.entries(state.map.chunks)) if (keys.has(v)) delete state.map.chunks[k];
-  }
   if (state.disputes) state.disputes = state.disputes.filter((d) => d.originNationId !== nationId && !d.choices.some((c) => c.winner === nationId));
   delete state.nations[nationId];
-  if (state.claims) state.claims = state.claims.filter((c) => c.by !== nationId && !(nation?.regions || []).some((r) => r.id === c.regionId));
-  for (const w of state.wars || []) if (w.status === "active" && (w.attacker === nationId || w.defender === nationId)) w.status = "over";
   for (const other of Object.values(state.nations)) {
     for (const s of other.situations || []) {
       if (s.otherId === nationId) s.otherId = null;
@@ -175,8 +169,12 @@ export function normalizeState(state) {
   state.v = STATE_VERSION;
   state.seq = state.seq || 1;
   for (const key of ["nations", "persons", "relations", "residents"]) state[key] = state[key] || {};
-  state.map = state.map || { chunks: {} };
-  state.map.chunks = state.map.chunks || {};
+  // the map was removed in 1.9: drop its saved data
+  delete state.map;
+  delete state.claims;
+  delete state.wars;
+  delete state.tables;
+  if (state.disputes) state.disputes = state.disputes.filter((d) => d.kind !== "war");
   state.disputes = state.disputes || [];
   state.tables = state.tables || [];
   delete state.houses;

@@ -11,7 +11,6 @@ import { nationSummary, regionProfile, statusLine } from "./render.js";
 import { castBallot, electionControl, historyMenu, liveResults, moodMenu, pollMenu, viewResult } from "./elections.js";
 import { candidatesMenu, colorOptions, countiesMenu, partiesMenu, performanceMenu, pickGovernment, settingsMenu, termMenu } from "./setup.js";
 import { interestGroupsPage } from "./dossier.js";
-import { openMap } from "./map.js";
 import { economyPage } from "./economy.js";
 import { activeCount, disputesMenu, openDisputes, situationsMenu } from "./situations.js";
 import { nightInProgress, startTheme, stopTheme } from "./ticker.js";
@@ -40,11 +39,10 @@ const HELP = [
   "",
   "§66. Election night§r (about 20 min) - results stream into chat with a live sidebar scoreboard. Election-day surprises, exit polls, lead changes, calls and recounts. Polls can be wrong!",
   "",
-  "§67. The World Map§r - a full-screen map of your world that fills itself in wherever you look. Move the cursor with your movement keys, Jump to select a place (claim it, declare war for it, draw borders, found a city), Sneak for the menu (Draw Borders: hold Jump to paint like a brush), scroll the hotbar to zoom.",
+    "",
+  "§67. Economy§r - taxes, tariffs and a budget (military, infrastructure, welfare, research, propaganda) drive GDP, the treasury, the performance sliders and how each interest group feels.",
   "",
-  "§68. Economy§r - taxes, tariffs and a budget (military, infrastructure, welfare, research, propaganda) drive GDP, the treasury, the performance sliders and how each interest group feels.",
-  "",
-  "§69. Situations§r - floods, strikes, resource strikes, invasions... strike your cities. Pick one of three responses (or do nothing) and a priority. Other countries get their own moves: help, exploit, or start a dispute that an admin rules on. Every outcome is graded, and challengers bring bad grades up in debates.",
+  "§68. Situations§r - floods, strikes, resource strikes, invasions... strike your cities. Pick one of three responses (or do nothing) and a priority. Other countries get their own moves: help, exploit, or start a dispute that an admin rules on. Every outcome is graded, and challengers bring bad grades up in debates.",
   "",
   "§7Admins: operators, or /tag <player> add electoral_admin. Each country can also list Rulers who run its economy, situations and borders.",
 ].join("\n");
@@ -68,7 +66,6 @@ export function nationView(player, nation) {
         nation.leaderId && { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },
         { text: `Situations${activeCount(nation) ? ` §c(${activeCount(nation)})` : ""}`, icon: "textures/items/blaze_powder", run: () => situationsMenu(player, nation) },
         { text: "Economy", icon: "textures/items/gold_ingot", run: () => economyPage(player, nation) },
-        { text: "Map: Our View", icon: "textures/items/map_filled", run: () => openMap(player, nation.id) },
         nation.regions.length > 0 && { text: "Interest Groups", icon: "textures/items/name_tag", run: () => interestGroupsPage(player, nation) },
         nation.regions.length > 0 && {
           text: "Counties & Voters",
@@ -163,7 +160,6 @@ function diplomacyNation(player, nation) {
       body: lines.join("\n"),
       options: [
         { text: `Situations${activeCount(nation) ? ` §c(${activeCount(nation)})` : ""}`, run: () => situationsMenu(player, nation) },
-        { text: "Map from Their View", run: () => openMap(player, nation.id) },
         { text: "Economy", run: () => economyPage(player, nation) },
         canRun(player, nation) && Object.keys(state.nations).length > 1 && { text: "Change Our Relations", run: () => setRelation(player, nation) },
       ],
@@ -190,7 +186,6 @@ export function openBoard(player) {
           return { text: `${n.color}${n.name}${tag}\n§7${GOV_BY_ID[n.gov]?.name}${leader ? ` · ${displayName(leader)}` : ""}`, run: () => nationView(player, n) };
         }),
         admin && { text: "§2+ Add a Nation", icon: "textures/items/banner_pattern", run: () => addNation(player) },
-        { text: "World Map", icon: "textures/items/map_filled", run: () => openMap(player, null) },
         nations.length > 1 && { text: "Diplomacy", icon: "textures/items/compass_item", run: () => diplomacyMenu(player) },
         admin && openDisputes().length > 0 && { text: `§6Disputes & Rulings (${openDisputes().length})`, run: () => disputesMenu(player) },
         { text: "How It Works", icon: "textures/items/book_normal", run: () => page(player, "How It Works", HELP) },

@@ -4,7 +4,6 @@
 
 import { world } from "@minecraft/server";
 import { newState, normalizeState } from "./state.js";
-import { clearTerrain } from "./terrain.js";
 
 const PREFIX = "electoral:state";
 const CHUNK = 16000; // characters; stays under the byte limit even for 2-byte chars
@@ -57,11 +56,20 @@ export function saveState() {
 
 export function resetState() {
   cache = newState();
-  clearTerrain();
+  dropMapData();
   saveState();
   return cache;
 }
 
 export function stateSize() {
   return cache ? JSON.stringify(cache).length : 0;
+}
+
+/** Deletes the saved map terrain from older versions (it could take a lot of space). */
+export function dropMapData() {
+  try {
+    for (const id of world.getDynamicPropertyIds()) if (id.startsWith("electoral:tr:") || id.startsWith("electoral:terrain")) world.setDynamicProperty(id, undefined);
+  } catch {
+    // older API
+  }
 }
