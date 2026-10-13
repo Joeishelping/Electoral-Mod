@@ -3,6 +3,7 @@
 // countries' counter-moves, disputes ruled by an admin, and a graded record of how
 // every crisis was handled - which voters remember at the next election.
 
+import { ruleWar } from "./wars.js";
 import { SCENARIOS, SCENARIO_BY_ID, DO_NOTHING, fill } from "../data/scenarios.js";
 import { BLOCS, BLOC_BY_ID } from "../data/blocs.js";
 import { effectiveGov } from "../data/governments.js";
@@ -458,6 +459,7 @@ function openRuling(state, nation, sit) {
 
 /** The admin decides a dispute. Returns chat lines. */
 export function ruleDispute(state, d, choiceIdx, rng) {
+  if (d.kind === "war") return [`§6[Ruling]§r ${d.title}: §e${d.choices[choiceIdx].label}`, ...ruleWar(state, d, choiceIdx)];
   const c = d.choices[choiceIdx];
   const origin = state.nations[d.originNationId];
   d.status = "closed";
@@ -501,6 +503,7 @@ export function ruleDispute(state, d, choiceIdx, rng) {
 
 export function rollDispute(state, d, rng) {
   const p = d.odds ?? 0.5;
+  if (d.kind === "war") return ruleDispute(state, d, rng.chance(p) ? 0 : d.choices.length - 1, rng);
   return ruleDispute(state, d, rng.chance(p) ? 0 : 1, rng);
 }
 

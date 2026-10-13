@@ -93,7 +93,7 @@
     "font_scale_factor": 1.0,
     "layer": 32,
     "localize": false,
-    "text": "Move cursor: §eWASD / stick§r   Use tool: §eJump§r   Menu: §eSneak§r   Zoom: §escroll hotbar",
+    "text": "Move: §eWASD / stick§r    Select / hold to draw: §eJump§r    Menu / stop drawing: §eSneak§r    Zoom: §escroll hotbar",
     "alpha": "@hud.electoral_map_hold"
   },
 

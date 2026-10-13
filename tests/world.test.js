@@ -266,3 +266,35 @@ test("situations name the real counties and the other country's real cities", ()
     }
   }
 });
+
+test("claims and wars: casus belli, unjustified wars, conquest and giving in", async () => {
+  const W = await import("../packs/ElectoralBP/scripts/engine/wars.js");
+  const { getStance } = await import("../packs/ElectoralBP/scripts/engine/diplomacy.js");
+  const { s, baza, gorg } = twoNations(7);
+  const { n: third } = buildNation(s, "democracy", 99, "Thirdland");
+  const city = gorg.regions[0];
+  assert.equal(W.casusBelli(s, baza, gorg, city).justified, false, "no claim, no casus belli");
+  assert.ok(W.pressClaim(s, baza, city).length);
+  assert.equal(W.pressClaim(s, baza, city).length, 0, "one claim per city");
+  assert.equal(W.casusBelli(s, baza, gorg, city).justified, true);
+  assert.equal(W.casusBelli(s, baza, gorg, null).justified, false, "one claim isn't enough to conquer a whole country");
+  // an unjustified war on Thirdland costs standing
+  const integrity = baza.metrics.integrity;
+  W.declareWar(s, baza, third, null);
+  assert.ok(baza.metrics.integrity < integrity, "the home front notices");
+  assert.notEqual(getStance(s, gorg.id, baza.id), "alliance");
+  assert.equal(W.declareWar(s, baza, third, null).length, 0, "already at war");
+  // Thirdland gives in: Baza takes all of it, land outside its cities too
+  const war = W.warBetween(s, baza.id, third.id);
+  third.regions.forEach((r, i) => fillRect(s, [40 + i, 0], [40 + i, 3], r.id));
+  fillRect(s, [60, 0], [61, 1], `n:${third.id}`);
+  W.endWar(s, war, "attacker");
+  assert.equal(third.regions.length, 0, "every city changed hands");
+  assert.equal(ownerAt(s, 60, 0), `n:${baza.id}`);
+  assert.equal(getStance(s, baza.id, third.id), "tense", "peace returns, warily");
+  // the claim war over Gorgonzola's city: the defender holds, the claim is dropped
+  W.declareWar(s, baza, gorg, city);
+  W.endWar(s, W.warBetween(s, baza.id, gorg.id), "defender");
+  assert.ok(gorg.regions.includes(city));
+  assert.equal(W.hasClaim(s, baza.id, city.id), false);
+});

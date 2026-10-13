@@ -48,8 +48,13 @@ function makeBlock(x, y, z) {
     },
   };
 }
+export const _commands = [];
 export const _overworld = {
   id: "minecraft:overworld",
+  runCommand(cmd) {
+    _commands.push(cmd);
+    return { successCount: 1 };
+  },
   getBlock: ({ x, y, z }) => (Math.abs(x) > 30000 || Math.abs(z) > 30000 ? undefined : makeBlock(Math.floor(x), Math.floor(y), Math.floor(z))),
   getTopmostBlock: ({ x, z }) => makeBlock(Math.floor(x), 64, Math.floor(z)),
   spawnEntity(type, loc) {

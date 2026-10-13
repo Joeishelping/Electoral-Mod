@@ -50,6 +50,25 @@ export function paintSquare(state, cx, cz, radius, target, canPaint = () => true
   return changed;
 }
 
+/** Paints a round brush stroke of radius r chunks (r = 0 is one chunk). */
+export function paintDisc(state, cx, cz, r, target, canPaint = () => true) {
+  const chunks = ensureMap(state).chunks;
+  let changed = 0;
+  const rr = (r + 0.5) * (r + 0.5);
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dz = -r; dz <= r; dz++) {
+      if (dx * dx + dz * dz > rr) continue;
+      const k = key(cx + dx, cz + dz);
+      const old = chunks[k] || null;
+      if (old === target || (old && !canPaint(old))) continue;
+      if (target) chunks[k] = target;
+      else delete chunks[k];
+      changed++;
+    }
+  }
+  return changed;
+}
+
 export function fillRect(state, a, b, target, canPaint = () => true) {
   const [x0, x1] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])];
   const [z0, z1] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])];

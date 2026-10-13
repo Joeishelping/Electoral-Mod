@@ -21,7 +21,7 @@ function topBlock(d, x, z) {
 
 const isWater = (t) => t === "minecraft:water" || t === "minecraft:flowing_water";
 
-/** Looks at one 4x4 patch of land from above. Returns false if it isn't loaded. */
+/** Looks at one 4x4 patch of land from above. Returns { color, y }, or false if it isn't loaded. */
 export function sampleCell(d, cx, cz) {
   try {
     const x = cx * CELL + 2;
@@ -49,8 +49,10 @@ export function sampleCell(d, cx, cz) {
       g = (f[1] * (1 - t) + g * t) * dark;
       bl = (f[2] * (1 - t) + bl * t) * dark;
     }
-    terrain.set(cx, cz, pack(r, g, bl), isWater(b.typeId) ? 62 : b.location.y);
-    return true;
+    const color = pack(r, g, bl);
+    const y = isWater(b.typeId) ? 62 : b.location.y;
+    terrain.set(cx, cz, color, y);
+    return { color, y };
   } catch {
     return false; // unloaded
   }

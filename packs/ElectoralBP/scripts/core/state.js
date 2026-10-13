@@ -142,6 +142,8 @@ export function deleteNation(state, nationId) {
   }
   if (state.disputes) state.disputes = state.disputes.filter((d) => d.originNationId !== nationId && !d.choices.some((c) => c.winner === nationId));
   delete state.nations[nationId];
+  if (state.claims) state.claims = state.claims.filter((c) => c.by !== nationId && !(nation?.regions || []).some((r) => r.id === c.regionId));
+  for (const w of state.wars || []) if (w.status === "active" && (w.attacker === nationId || w.defender === nationId)) w.status = "over";
   for (const other of Object.values(state.nations)) {
     for (const s of other.situations || []) {
       if (s.otherId === nationId) s.otherId = null;

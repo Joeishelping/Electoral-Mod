@@ -49,6 +49,8 @@ const GOLD = hex(0xf0c040);
 const GREY = hex(0x9a9a9a);
 const FRONT_A = hex(0xe02020);
 const FRONT_B = hex(0x200808);
+const CLAIM_MINE = hex(0x60ff60);
+const CLAIM_ON_ME = hex(0xff5040);
 
 /** The glyph for a colour. Rows/columns 0 and 15 of a font page are never used (texture bleed). */
 const GLYPHS = new Array(32768);
@@ -197,6 +199,16 @@ export function* drawBase(state, terrain, frame, rect = null) {
     return w;
   };
   const diplomatic = view.mode === "diplomatic" && view.persp;
+  // claims, seen from the country whose view this is: theirs on others in green stripes, others' on them in red
+  const claimMine = new Set();
+  const claimOnMe = new Set();
+  if (diplomatic) {
+    const mine = new Set((state.nations[view.persp]?.regions || []).map((r) => r.id));
+    for (const c of state.claims || []) {
+      if (c.by === view.persp && !mine.has(c.regionId)) claimMine.add(c.regionId);
+      else if (c.by !== view.persp && mine.has(c.regionId)) claimOnMe.add(c.regionId);
+    }
+  }
   const cityLines = view.zoom <= 32 && view.mode !== "terrain";
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
@@ -219,6 +231,10 @@ export function* drawBase(state, terrain, frame, rect = null) {
             if (war) edge = 3;
             else if (edge < 2) edge = 2;
           } else if (d !== 1 && d !== 3 && cityLines && edge < 1) edge = 1;
+        }
+        if (!edge && (claimMine.size || claimOnMe.size) && (i + j) % 4 === 0) {
+          if (claimMine.has(o)) c = CLAIM_MINE;
+          else if (claimOnMe.has(o)) c = CLAIM_ON_ME;
         }
         if (edge === 3) c = ((i + j) >> 1) & 1 ? FRONT_A : FRONT_B;
         else if (edge === 2) c = view.mode === "terrain" ? me.color : scale(me.color, 0.55);

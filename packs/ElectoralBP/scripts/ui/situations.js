@@ -162,7 +162,7 @@ function disputePage(player, d) {
   return loop(player, () => {
     if (d.status !== "open") return null;
     const lines = [`§l${d.title}`, "", `§f${d.text}`];
-    if (d.odds !== null && d.odds !== undefined) lines.push("", `§7Odds by military strength: §f${pct(d.odds, 0)}§7 for "${d.choices[0].label}", §f${pct(1 - d.odds, 0)}§7 for "${d.choices[1].label}".`);
+    if (d.odds !== null && d.odds !== undefined) lines.push("", `§7Odds by military strength: §f${pct(d.odds, 0)}§7 for "${d.choices[0].label}", §f${pct(1 - d.odds, 0)}§7 for "${d.choices[d.choices.length - 1].label}".`);
     return {
       title: "Ruling",
       body: lines.join("\n"),

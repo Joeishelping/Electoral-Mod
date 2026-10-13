@@ -88,26 +88,34 @@ Votes then include random swings at the national, county and group level, plus t
 
 ## World map
 
-A full-screen map of your real world, drawn over the game like a grand-strategy map: the terrain players have explored, every country in its colour, city borders, names, war fronts and situation markers. Everything is done inside the map screen.
+A full-screen map of your world, drawn over the game like a grand-strategy map: real terrain, every country in its colour, city borders, names, claims, war fronts and situations.
 
-- **Open it:** Board Table → **World Map**, use the **World Map** item (craft paper + compass, or get one from the map menu), or type `/electoral:map`. Use the item again to close the map.
-- **While it's open you stand still.** Your controls steer the map instead:
-  - **Move keys / left stick** – move the cursor. Push against the edge to scroll the map.
-  - **Jump** – use the current tool on the spot under the cursor.
-  - **Sneak** – the map menu (tools, what to paint, map style, zoom, go to, close).
-  - **Scroll the hotbar** – zoom in and out (1 pixel = 1 to 128 blocks).
-- **Tools:**
-  - *Look & Inspect* (everyone): Jump on a place to see who owns it, the county's people and situations, and act on them (respond to a situation, manage the county, hand it to another country, unclaim).
-  - *Paint Brush*: hold Jump and move to paint the chosen country or city (or the eraser). Pick what to paint and the brush size from the menu.
-  - *Rectangle*: Jump on one corner, then the other.
-  - *Paint Bucket*: fills the joined patch of land under the cursor.
-  - *Found a City*: Jump where it goes, type its name and kind.
-- **Map styles:** World (each country in its colour), Terrain (land with borders only), or one country's view (home green, allies blue, rivals orange, enemies red, war fronts striped, and that country's situations marked).
-- The map fills in by itself as players walk around and keeps updating as things are built. Admins can map a wide area at once with **Map the Land Around Me**. Unexplored land is dark.
-- Rulers can only paint over land their own country holds; admins can paint anything.
-- `/scriptevent electoral:diag` prints a health check (API support and how fast the map draws) to chat and the server console.
+- **Open it:** Board Table → **World Map**, use the **World Map** item (craft paper + compass), or type `/electoral:map`. Use the item again to close it.
+- **It fills itself in.** Wherever you look, the add-on loads that land for a moment behind the scenes (generating it if nobody has been there yet), reads it, and lets it go again. A screen's worth fills in within about a minute when zoomed in. Zoomed far out over brand-new land, rough colours spread out from the middle over a few minutes. Places players have already visited are quicker. "MAPPING" in the corner means it's working.
+- **You stand still while it's open.** The controls drive the map:
+  - **Move keys / stick:** move the cursor. Push against an edge to scroll.
+  - **Jump:** select the place under the cursor. While drawing, hold it to paint.
+  - **Sneak:** the map menu. While drawing, stop drawing.
+  - **Scroll the hotbar:** zoom.
 
-The map is drawn on the action bar with a custom font and HUD layout from the resource pack, so the RP must be applied. Another add-on that also changes the action bar HUD (Explorer's World Map does) can override ours; ElectoralV2's map still draws under Explorer's World Map's HUD, but its control hints won't show.
+### Drawing borders
+Sneak → **Draw Borders**, pick your country, one of its cities, a new city, or the eraser. Then hold Jump and move. It's a paintbrush that stays the same size on screen, so zoom in to trace coastlines and rivers. Sneak when you're done. You can also select a place and pick **Draw ... Borders** or **Found a City Here**.
+
+You can paint empty land and your own. Another country's land has to be won in a war (or handed over). Admins can paint anything.
+
+### Claims and wars (CK3 style)
+Select another country's city and:
+- **Press a Claim:** your claim on that city is a casus belli. Claimed land shows with green stripes in your view, and your land others claim with red stripes.
+- **Declare War for (city):** justified if you hold a claim on it.
+- **Declare War on All of (country):** justified if you claim at least half its cities.
+- A war without a casus belli is allowed, but your country loses integrity and security at home, and every other country's relations with you sour.
+- A war ends when one side picks **Give In** (from the map, or Sneak → Wars & Claims), or when an admin rules on it under **Disputes** (attacker wins / white peace / defender holds), or rolls the dice on military strength. The winner of a city war takes the city with its land, people and voting history; conquering a whole country takes everything.
+
+Who you play as: rulers play as their own country automatically. Admins (or anyone ruling several countries) pick in the map menu.
+
+The map is drawn on the action bar with a custom font and HUD layout from the resource pack, so the RP must be applied (on servers, `texturepack-required=true`). Another add-on that changes the action bar HUD (Explorer's World Map does) can override ours.
+
+Admin checks: `/scriptevent electoral:diag` (API support and how fast the map draws) and `/scriptevent electoral:survey <x> <z> <zoom>` (fills in the map around a spot and reports how fast).
 
 ## Economy
 

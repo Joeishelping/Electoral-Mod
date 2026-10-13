@@ -8,7 +8,7 @@ import { nightInProgress, startTheme, tick } from "./ui/ticker.js";
 import { closeMapView, flushMapEdits, inMapView, MAP_ITEM, mapTick, openMapView, releaseIfStuck } from "./ui/mapscreen.js";
 import { exploreTick } from "./ui/explore.js";
 import { dropLegacyTerrain } from "./core/terrain.js";
-import { diag } from "./ui/diag.js";
+import { diag, diagSurvey } from "./ui/diag.js";
 
 const open = new Set();
 
@@ -67,6 +67,11 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
   if (event.id === "electoral:diag") {
     const [x, z] = event.message.split(/\s+/).map(Number);
     diag(x || 0, z || 0);
+    return;
+  }
+  if (event.id === "electoral:survey") {
+    const [x, z, zoom] = event.message.split(/\s+/).map(Number);
+    diagSurvey(x || 0, z || 0, zoom || 4);
     return;
   }
   if (event.id === "electoral:map") {
