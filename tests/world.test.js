@@ -5,7 +5,7 @@ import { newState, createNation } from "../packs/ElectoralBP/scripts/core/state.
 import { createRng } from "../packs/ElectoralBP/scripts/core/random.js";
 import { transferRegion } from "../packs/ElectoralBP/scripts/engine/territory.js";
 import { ensureEconomy, runEconomyTurn, policyAppeal } from "../packs/ElectoralBP/scripts/engine/economy.js";
-import { spawnSituation, respond, respondCounter, advanceSituations, ruleDispute, termRecord } from "../packs/ElectoralBP/scripts/engine/situations.js";
+import { spawnSituation, spawnChance, respond, respondCounter, advanceSituations, ruleDispute, termRecord } from "../packs/ElectoralBP/scripts/engine/situations.js";
 import { runNationTurn } from "../packs/ElectoralBP/scripts/engine/turns.js";
 import { setStance } from "../packs/ElectoralBP/scripts/engine/diplomacy.js";
 import { SCENARIOS } from "../packs/ElectoralBP/scripts/data/scenarios.js";
@@ -212,4 +212,115 @@ test("scenarios about people change the real candidates", () => {
     advanceSituations(s, baza, rng);
   }
   assert.ok(rival.popularity < before, "the leak hurts them");
+});
+
+test("choices have consequences: ignoring a coup plot brings a coup", async () => {
+  const { spawnFollowUps, optionsFor } = await import("../packs/ElectoralBP/scripts/engine/situations.js");
+  const { s, baza } = twoNations(11);
+  const rng = createRng(4);
+  const { sit } = spawnSituation(s, baza, rng, { tplId: "coup_plot" });
+  respond(s, baza, sit, -1, 0); // do nothing
+  for (let i = 0; i < 15 && sit.status === "active"; i++) {
+    ensureEconomy(baza).turn++;
+    advanceSituations(s, baza, rng);
+  }
+  assert.notEqual(sit.status, "active");
+  assert.ok((baza.pending || []).some((p) => p.tpl === "coup_attempt"), "a coup is coming");
+  const lines = [];
+  for (let i = 0; i < 3; i++) {
+    ensureEconomy(baza).turn++;
+    lines.push(...spawnFollowUps(s, baza, rng));
+  }
+  const coup = baza.situations.find((x) => x.tpl === "coup_attempt");
+  assert.ok(coup, "the coup happened");
+  assert.ok(lines.some((l) => l.includes("Because of")), "chat explains why");
+  assert.equal(optionsFor(coup).length, 3);
+});
+
+test("a ruler's traits draw their own trouble and unlock special choices", async () => {
+  const { optionsFor, pickTemplate } = await import("../packs/ElectoralBP/scripts/engine/situations.js");
+  const { s, baza } = twoNations(12);
+  const ruler = Object.values(s.persons).find((p) => p.nationId === baza.id);
+  baza.leaderId = ruler.id;
+  ruler.traits = [];
+  const plain = spawnSituation(s, baza, createRng(1), { tplId: "mutiny" }).sit;
+  assert.equal(optionsFor(plain).length, 3);
+  ruler.traits = ["warhero"];
+  const hero = spawnSituation(s, baza, createRng(2), { tplId: "invasion", otherId: Object.keys(s.nations).find((id) => id !== baza.id) }).sit;
+  assert.equal(optionsFor(hero).length, 4, "a War Hero can take personal command");
+  assert.match(optionsFor(hero)[3].label, /War Hero/);
+  respond(s, baza, hero, 3, 5);
+  for (let i = 0; i < 12 && hero.status === "active"; i++) {
+    ensureEconomy(baza).turn++;
+    advanceSituations(s, baza, createRng(i));
+  }
+  assert.notEqual(hero.status, "active");
+  // corrupt rulers attract scandals far more than clean ones
+  baza.situations = [];
+  const count = (traits) => {
+    ruler.traits = traits;
+    const rng = createRng(9);
+    let n = 0;
+    for (let i = 0; i < 600; i++) if (["corruption", "minister_affair", "slush_fund", "nepotism", "campaign_donor", "ghost_workers", "corrupt_judge", "vote_buying"].includes(pickTemplate(s, baza, rng)?.id)) n++;
+    return n;
+  };
+  assert.ok(count(["corrupt"]) > count(["clean"]) * 3, "the Corrupt trait pulls in scandals");
+});
+
+test("situation pace can be set per country", async () => {
+  const { s, baza } = twoNations(13);
+  const e = ensureEconomy(baza);
+  e.eventRate = 0;
+  assert.equal(spawnChance(s, baza), 0, "off means off");
+  e.eventRate = 4;
+  const busy = spawnChance(s, baza);
+  e.eventRate = 1;
+  assert.ok(busy > spawnChance(s, baza), "chaotic is busier than calm");
+});
+
+test("each country's newspaper reports the news, polls and gossip", async () => {
+  const { writePaper, paperDue, paperName } = await import("../packs/ElectoralBP/scripts/engine/newspaper.js");
+  const { s, baza } = twoNations(14);
+  const people = Object.values(s.persons).filter((p) => p.nationId === baza.id);
+  baza.leaderId = people[0].id;
+  people[1].traits = ["corrupt"];
+  const rng = createRng(5);
+  for (let i = 0; i < 6; i++) runNationTurn(s, baza, rng, Date.now());
+  assert.ok(baza.paper?.last, "an edition was printed");
+  const text = baza.paper.last.join("\n");
+  assert.ok(text.includes(paperName(baza).toUpperCase()));
+  assert.match(text, /approve of/);
+  assert.match(text, /Rising star/);
+  assert.doesNotMatch(text, /undefined|NaN|\{/);
+  assert.equal(paperDue(baza), false);
+  const again = writePaper(s, baza, rng);
+  assert.ok(again.length >= 3);
+});
+
+test("treaties need both sides: alliances, counties, tribute and peace", async () => {
+  const T = await import("../packs/ElectoralBP/scripts/engine/treaties.js");
+  const { getStance } = await import("../packs/ElectoralBP/scripts/engine/diplomacy.js");
+  const { s, baza, gorg } = twoNations(15);
+  assert.ok(!T.treatiesFor(s, baza, gorg).some((t) => t.id === "peace"), "no peace without a war");
+  const a = T.propose(s, baza, gorg, "alliance", { note: "friends?" });
+  assert.equal(getStance(s, baza.id, gorg.id), "neutral", "nothing happens until they answer");
+  assert.equal(T.openFor(s, gorg.id).length, 1);
+  T.answer(s, a, true);
+  assert.equal(getStance(s, baza.id, gorg.id), "alliance");
+  const city = gorg.regions[0];
+  T.answer(s, T.propose(s, baza, gorg, "demand_county", { regionId: city.id }), false);
+  assert.ok(gorg.regions.includes(city), "refused - they keep it");
+  T.answer(s, T.propose(s, gorg, baza, "gift_county", { regionId: city.id }), true);
+  assert.ok(baza.regions.includes(city), "a gift accepted");
+  ensureEconomy(gorg).treasury = 1000;
+  ensureEconomy(baza).treasury = 0;
+  T.answer(s, T.propose(s, baza, gorg, "tribute", { amount: 300 }), true);
+  assert.equal(Math.round(ensureEconomy(baza).treasury), 300);
+  setStance(s, baza.id, gorg.id, "war");
+  assert.ok(!T.treatiesFor(s, baza, gorg).some((t) => t.id === "alliance"), "make peace before an alliance");
+  T.answer(s, T.propose(s, gorg, baza, "peace"), true);
+  assert.equal(getStance(s, baza.id, gorg.id), "tense");
+  const old = T.propose(s, baza, gorg, "trade", { now: Date.now() - T.EXPIRE_MS - 1 });
+  T.expireProposals(s);
+  assert.equal(old.status, "expired");
 });

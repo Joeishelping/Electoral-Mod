@@ -137,7 +137,7 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   assert.ok(JSON.parse(_props.get("electoral:state:meta")).count >= 1);
   const chat = _messages.join("\n");
   for (const must of ["closed", "first returns", "RESULT"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
-  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government", "Economy", "Taxes & Tariffs", "Budget Allocation", "Response", "Our Move", "Ruling", "Trigger a Situation", "Crisis Record"]) assert.ok(titles.has(must), `reached screen: ${must}`);
+  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government", "Economy", "Taxes & Tariffs", "Budget Allocation", "Response", "Our Move", "Ruling", "Trigger a Situation", "Crisis Record", "Treaty Offers", "On Behalf Of"]) assert.ok(titles.has(must), `reached screen: ${must}`);
   if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
 });
 
@@ -172,4 +172,45 @@ test("leftover election results leave the screen after the night", async () => {
   if (!world.scoreboard.getObjective("electoral_live")) world.scoreboard.addObjective("electoral_live", "Old results");
   tick(Date.now() + 10 * 60000);
   assert.equal(world.scoreboard.getObjective("electoral_live"), undefined, "the sidebar is gone");
+});
+
+test("rulers get a pop-up for new situations and treaty offers, and can turn them off", async () => {
+  const { pingSituation, pingProposal, pingsOn } = await import("../packs/ElectoralBP/scripts/ui/pings.js");
+  const { spawnSituation } = await import("../packs/ElectoralBP/scripts/engine/situations.js");
+  const { propose } = await import("../packs/ElectoralBP/scripts/engine/treaties.js");
+  const { getStance } = await import("../packs/ElectoralBP/scripts/engine/diplomacy.js");
+  const state = getState();
+  const { n } = buildNation(state, "democracy", 301, "Pingland");
+  const { n: other } = buildNation(state, "democracy", 302, "Otherland");
+  n.rulers = ["Ruler"];
+  const ruler = makePlayer(createRng(4), 1000, false);
+  ruler.id = "ruler";
+  ruler.name = "Ruler";
+  const titles = [];
+  let stop = false;
+  ruler.respond = async (form) => {
+    titles.push(form._title);
+    if (form.kind === "action") return stop ? form.buttons.findIndex((b) => b.includes("Stop")) : 0; // Decide Now
+    if (form.kind === "message") return 0; // accept
+    return form.fields.map((f) => (f.type === "dropdown" ? 0 : f.type === "slider" ? 3 : f.value));
+  };
+  _players.length = 0;
+  _players.push(ruler);
+  const { sit } = spawnSituation(state, n, createRng(8), { tplId: "strike" });
+  pingSituation(n, sit);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(titles.some((t) => t.includes(sit.title)), "pop-up shown");
+  assert.equal(sit.choice, 0, "answered straight from the pop-up");
+  const p = propose(state, other, n, "alliance");
+  pingProposal(n, p);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(getStance(state, n.id, other.id), "alliance", "treaty accepted from the pop-up");
+  stop = true;
+  pingProposal(n, propose(state, other, n, "trade"));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(pingsOn(ruler), false, "pop-ups turned off");
+  const before = titles.length;
+  pingSituation(n, spawnSituation(state, n, createRng(9), { tplId: "inflation" }).sit);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(titles.length, before, "no more pop-ups");
 });

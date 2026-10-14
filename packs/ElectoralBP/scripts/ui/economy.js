@@ -1,5 +1,6 @@
 // National Economy: treasury, GDP, taxes, tariffs and the budget.
 
+import { EVENT_RATES } from "../engine/situations.js";
 import { BUDGET, ensureEconomy, money, tradePartners } from "../engine/economy.js";
 import { runNationTurn } from "../engine/turns.js";
 import { createRng } from "../core/random.js";
@@ -98,12 +99,14 @@ async function settings(player, nation) {
   const r = await modal(player, "Economy Settings", [
     { key: "on", type: "toggle", label: "Economy & situations running for this nation", value: e.enabled },
     { key: "min", type: "slider", label: "Minutes per economy turn", min: 2, max: 120, value: e.turnMinutes },
+    { key: "pace", type: "dropdown", label: "How often situations strike this country", options: EVENT_RATES.map((x) => x.name), value: e.eventRate ?? 2 },
     { key: "auto", type: "toggle", label: "Economy drives the Leader Performance sliders", value: e.autoMetrics },
   ]);
   if (!r) return;
   e.enabled = r.on;
   e.turnMinutes = r.min;
   e.autoMetrics = r.auto;
+  e.eventRate = r.pace;
   e.nextTurnAt = Date.now() + r.min * 60000;
   commit();
 }

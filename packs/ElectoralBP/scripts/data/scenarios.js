@@ -27,6 +27,7 @@
 //             treasury, gdp
 
 import { MORE_SCENARIOS } from "./scenarios_more.js";
+import { applyChains, FOLLOW_UPS } from "./chains.js";
 
 const o = (label, desc, p = {}) => ({ label, desc, cost: 1, speed: 1, groups: {}, fx: {}, ...p });
 
@@ -661,7 +662,8 @@ export const SCENARIOS = [
   },
 ];
 
-SCENARIOS.push(...MORE_SCENARIOS);
+SCENARIOS.push(...MORE_SCENARIOS, ...FOLLOW_UPS);
+applyChains(SCENARIOS);
 
 export const SCENARIO_BY_ID = Object.fromEntries(SCENARIOS.map((s) => [s.id, s]));
 export const DO_NOTHING = { label: "Do nothing", desc: "Let it play out." };

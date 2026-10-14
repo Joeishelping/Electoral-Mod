@@ -13,17 +13,22 @@
 //
 // Scenario props: prefer:a,b  sev:2  grow:.6  spread:.3  gdp:.03  m:jobs-4,economy-2
 //   needs:other|enemy|war|ally  person:ruler|rival|any  govs:monarchy,clan  cities:1-2  w:.6 (how common)
+//   chain:1 (only ever follows another situation)  fail:id / ignore:id (what follows a failure / doing nothing)
+// Choices can lead on:  >libel_suit@60  (60% chance that situation follows a turn or two later)
+// Trait choices (see chains.js) carry T:warhero - only offered when the ruler or the person has that trait.
 // Fillers in text: {country} {city} {other} {othercity} {lobby} {leader} (title) {ruler} {rival}
 
 const METRICS = new Set(["economy", "jobs", "security", "services", "food", "integrity"]);
 const ORIGIN = { p: "progress", sev: "severity", $: "treasury", g: "gdp" };
 
-function opt(line) {
+export function opt(line) {
   const [label, desc, mods = ""] = line.split("|").map((x) => x.trim());
   const o = { label, desc, cost: 1, speed: 1, groups: {}, fx: {} };
   for (const t of mods.split(/\s+/).filter(Boolean)) {
     let m;
     if (t === "M") o.manual = true;
+    else if ((m = /^>(\w+)(?:@(\d+))?$/.exec(t))) (o.next = o.next || []).push({ id: m[1], chance: m[2] ? +m[2] / 100 : 1 });
+    else if ((m = /^T:(\w+)$/.exec(t))) o.trait = m[1];
     else if (t === "X") o.contest = "city";
     else if (t === "cede") o.fx.special = "cede";
     else if ((m = /^c([\d.]+)$/.exec(t))) o.cost = +m[1];
@@ -55,7 +60,8 @@ function props(str) {
     if (k === "prefer" || k === "govs") p[k] = v.split(",");
     else if (k === "m") p.metrics = Object.fromEntries(v.split(",").map((x) => /^(\w+)([+-]\d+)$/.exec(x)).map((x) => [x[1], +x[2]]));
     else if (k === "cities") p.cities = v.split("-").map(Number);
-    else if (k === "needs" || k === "person") p[k] = v;
+    else if (k === "needs" || k === "person" || k === "fail" || k === "ignore") p[k] = v;
+    else if (k === "chain") p.chain = true;
     else if (k === "sev") p.severity = +v;
     else if (k === "grow") p.growth = +v;
     else p[k] = +v; // spread, gdp, w
@@ -64,7 +70,7 @@ function props(str) {
 }
 
 /** sc(id, category, "c"risis | "o"pportunity, title, escalated title, text, props, [3 choices], [who, title, text, [3 choices]]) */
-function sc(id, cat, kind, title, escalated, text, p, options, counter) {
+export function sc(id, cat, kind, title, escalated, text, p, options, counter) {
   const s = { id, cat, kind: kind === "o" ? "opportunity" : "crisis", title, text, severity: 2, ...props(p), options: options.map(opt) };
   if (escalated) s.escalated = escalated;
   if (counter) s.counter = { who: counter[0], title: counter[1], text: counter[2], options: counter[3].map(opt) };

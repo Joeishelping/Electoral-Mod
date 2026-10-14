@@ -30,6 +30,7 @@ export function defaultEconomy() {
     enabled: true,
     autoMetrics: true,
     turnMinutes: 20,
+    eventRate: 2, // index into EVENT_RATES (situations.js): Normal
     nextTurnAt: null,
     turn: 0,
     treasury: null,

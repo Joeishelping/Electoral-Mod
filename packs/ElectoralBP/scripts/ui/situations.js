@@ -83,7 +83,7 @@ export function situationPage(player, nation, sit) {
   });
 }
 
-async function chooseResponse(player, nation, sit) {
+export async function chooseResponse(player, nation, sit) {
   const state = S();
   const opts = optionsFor(sit);
   const labels = [...opts.map((_, i) => optionLabel(state, sit, i).slice(0, 60)), DO_NOTHING.label];
@@ -98,7 +98,7 @@ async function chooseResponse(player, nation, sit) {
   commit();
 }
 
-async function chooseCounter(player, nation, sit) {
+export async function chooseCounter(player, nation, sit) {
   const state = S();
   const opts = optionsFor(sit);
   const labels = [...opts.map((_, i) => optionLabel(state, sit, i).slice(0, 60)), DO_NOTHING.label];

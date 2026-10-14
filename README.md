@@ -127,6 +127,30 @@ They only use names you entered: your counties, your candidates and ruler, the o
 - **Grades:** every outcome gets a grade from A to F and goes on the country's **Crisis Record**, along with what every country did.
 - **Elections:** challengers tear into a badly handled crisis in debates, and incumbents tout the good ones. Affected counties swing for or against the incumbent. Interest groups remember which side the government took, and rally behind it or against it.
 
+- **Consequences:** choices come back to bite (or reward) you a turn or two later, CK3-style. Leak a rival's scandal and they may sue for libel. Send police into a strike and you may get a martyr. Ignore a coup plot and the tanks roll. Hand rebuilding contracts to friends and the cover-up may be exposed. Chat says "Because of..." so everyone knows why. 28 situations only ever happen this way.
+- **Your ruler's character:** traits draw their own trouble. A Corrupt ruler gets far more scandals, a Devout one more prophets and clergy, a War Hero more mutinies and veterans, while a Squeaky Clean one rarely gets scandals at all. Some traits unlock a fourth choice nobody else gets: a War Hero can lead the defence from the walls, a Silver Tongue can laugh off a gaffe, a Union Organizer can join the picket line.
+- **Pop-ups:** when something hits a country, its online rulers get a pop-up to decide right away (Decide Now / Later / Stop these pop-ups). Countries without listed rulers ping the admins. Toggle it on the Board Table's main page.
+- **Pace:** Economy → Settings → "How often situations strike": Off, Calm, Normal, Busy or Chaotic, per country.
+
+## Newspapers
+
+Every country has its own paper (rename it from the country's page). Every 3 economy turns it prints in chat:
+- a headline about the biggest thing that happened, and how each situation was handled, with grades;
+- a poll of the leader's approval (and how it moved), and the rising star among the other candidates;
+- the economy's growth, the treasury and any wars;
+- gossip about the candidates, based on their traits.
+
+The latest edition can be re-read from the country's page.
+
+## Treaties
+
+Rulers propose, and the other country's ruler accepts or refuses (they get a pop-up). Diplomacy → a country → **Propose a Treaty**:
+- alliance, trade pact, friendship, normalising relations, or peace (during a war);
+- giving them one of your counties, or asking for one of theirs;
+- paying them, or demanding tribute.
+
+Making things worse (tense, rivalry, war) needs no one's permission; making things better needs both sides. Offers lapse after 48 hours. Admins can still set any relation directly.
+
 ## Development
 
 ```

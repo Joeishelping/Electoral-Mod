@@ -119,7 +119,9 @@ export function pickTemplate(state, nation, rng) {
   const gov = effectiveGov(nation).id;
   const hasLeader = !!state.persons[nation.leaderId];
   const hasRival = Object.values(state.persons).some((p) => p.nationId === nation.id && p.name && p.id !== nation.leaderId);
+  const traits = state.persons[nation.leaderId]?.traits || [];
   const pool = SCENARIOS.filter((t) =>
+    !t.chain &&
     !active.has(t.id) &&
     (!t.needs || candidatesFor(state, nation, t.needs).length) &&
     (!t.govs || t.govs.includes(gov)) &&
@@ -136,6 +138,7 @@ export function pickTemplate(state, nation, rng) {
     if (t.id === "riots") w *= 1 + nation.regions.reduce((s, r) => s + (r.unrest || 0), 0) / (50 * (nation.regions.length || 1));
     if (t.kind === "opportunity") w *= e.growth > 0.02 ? 1.3 : 1;
     if (t.govs) w *= 1.5; // flavour for this kind of government
+    for (const tr of traits) if (t.traitPull?.[tr]) w *= t.traitPull[tr]; // the ruler's character draws its own troubles
     return w * (t.w ?? 1);
   });
 }
@@ -154,7 +157,7 @@ export function spawnSituation(state, nation, rng, opts = {}) {
   }
   const count = rng.int((tpl.cities || [1, 1])[0], (tpl.cities || [1, 1])[1]);
   const regionIds = opts.regionIds?.length ? opts.regionIds : pickRegions(nation, tpl, rng, count);
-  const person = personFor(state, nation, tpl.person, rng);
+  const person = opts.personId && state.persons[opts.personId] ? state.persons[opts.personId] : personFor(state, nation, tpl.person, rng);
   if (tpl.person && !person) return null;
   const sit = {
     id: nextId(state, "s"),
@@ -165,6 +168,8 @@ export function spawnSituation(state, nation, rng, opts = {}) {
     otherId,
     otherCityId: otherId ? nearestCity(state, state.nations[otherId], regionIds) : null,
     personId: person?.id || null,
+    bonus: !!tpl.bonus && [state.persons[nation.leaderId], person].some((p) => p?.traits?.includes(tpl.bonus.trait)),
+    after: opts.after || null,
     lobby: rng.pick(BLOCS).id,
     severity: tpl.severity || 2,
     startSeverity: tpl.severity || 2,
@@ -219,7 +224,33 @@ function trim(nation) {
 
 export function optionsFor(sit) {
   const tpl = SCENARIO_BY_ID[sit.tpl];
-  return sit.kind === "counter" ? tpl.counter.options : tpl.options;
+  if (sit.kind === "counter") return tpl.counter.options;
+  return sit.bonus && tpl.bonus ? [...tpl.options, tpl.bonus] : tpl.options;
+}
+
+/** Queues what follows from how a situation ended (CK3-style consequences). */
+function queueFollowUp(nation, sit, tpl, opt, outcome, rng) {
+  let next = null;
+  if (outcome === "success" && opt?.next) next = opt.next.find((n) => rng.chance(n.chance))?.id || null;
+  else if (outcome === "failure" && tpl.fail) next = tpl.fail;
+  else if ((outcome === "declined" || outcome === "missed") && tpl.ignore) next = tpl.ignore;
+  if (!next) return;
+  nation.pending = nation.pending || [];
+  nation.pending.push({ tpl: next, turn: turnOf(nation) + rng.int(1, 2), regionIds: sit.regionIds.slice(), otherId: sit.otherId, personId: sit.personId, after: sit.title });
+}
+
+/** Spawns follow-ups that are due this turn. */
+export function spawnFollowUps(state, nation, rng) {
+  const lines = [];
+  const due = (nation.pending || []).filter((p) => p.turn <= turnOf(nation));
+  nation.pending = (nation.pending || []).filter((p) => p.turn > turnOf(nation));
+  for (const p of due) {
+    const regionIds = p.regionIds.filter((id) => getRegion(nation, id));
+    const res = spawnSituation(state, nation, rng, { tplId: p.tpl, regionIds, otherId: state.nations[p.otherId] ? p.otherId : null, personId: p.personId, after: p.after });
+    if (!res) continue;
+    lines.push(`${tagOf(nation)} §6Because of "${p.after}"...`, ...res.lines);
+  }
+  return lines;
 }
 
 export function optionLabel(state, sit, i) {
@@ -327,9 +358,10 @@ const QUALITY = { A: 1.2, B: 1, C: 0.8, D: 0.6, F: 0.4 };
 export function resolveSituation(state, nation, sit, outcome, rng) {
   const tpl = SCENARIO_BY_ID[sit.tpl];
   const lines = [];
-  const opt = sit.choice >= 0 ? tpl.options[sit.choice] : null;
+  const opt = sit.choice >= 0 ? optionsFor(sit)[sit.choice] : null;
   const held = (state.disputes || []).some((d) => d.status === "open" && d.sitId === sit.id && d.kind === "contest");
   const grade = gradeOf(sit, tpl, outcome);
+  queueFollowUp(nation, sit, tpl, opt, outcome, rng);
   sit.status = outcome === "success" ? "resolved" : outcome;
   sit.grade = grade;
   sit.endTurn = turnOf(nation);
@@ -551,7 +583,7 @@ export function advanceSituations(state, nation, rng) {
       continue;
     }
     sit.turns++;
-    const opt = sit.choice >= 0 ? tpl.options[sit.choice] : null;
+    const opt = sit.choice >= 0 ? optionsFor(sit)[sit.choice] : null;
     let pr = opt ? sit.priority : 0;
     if (broke && pr > 1) {
       pr = 1;
@@ -600,12 +632,22 @@ export function advanceSituations(state, nation, rng) {
 }
 
 /** How likely a new situation is this turn. */
+// how busy a country is: off, calm, normal, busy, chaotic
+export const EVENT_RATES = [
+  { name: "Off", rate: 0, cap: 0 },
+  { name: "Calm", rate: 0.5, cap: 2 },
+  { name: "Normal", rate: 1, cap: 3 },
+  { name: "Busy", rate: 1.5, cap: 4 },
+  { name: "Chaotic", rate: 2, cap: 6 },
+];
+
 export function spawnChance(state, nation) {
+  const pace = EVENT_RATES[ensureEconomy(nation).eventRate ?? 2] || EVENT_RATES[2];
   const active = (nation.situations || []).filter((s) => s.status === "active" && s.kind === "situation").length;
-  if (active >= 3) return 0;
+  if (active >= pace.cap) return 0;
   const wars = others(state, nation).filter((o) => getStance(state, nation.id, o.id) === "war").length;
   const unrest = nation.regions.length ? nation.regions.reduce((s, r) => s + (r.unrest || 0), 0) / nation.regions.length : 0;
-  return clamp(0.3 + 0.12 * wars + unrest / 200 - active * 0.08, 0, 0.8);
+  return clamp((0.3 + 0.12 * wars + unrest / 200 - active * 0.08) * pace.rate, 0, 0.95);
 }
 
 /** Records from the current term (since the last election). */

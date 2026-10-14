@@ -5,6 +5,8 @@ import { world, DisplaySlotId, ObjectiveSortOrder } from "@minecraft/server";
 import { createRng, hashSeed } from "../core/random.js";
 import { ensureEconomy } from "../engine/economy.js";
 import { runNationTurn } from "../engine/turns.js";
+import { expireProposals } from "../engine/treaties.js";
+import { pingSituation } from "./pings.js";
 import { beginCount, liveView, tickNight } from "../engine/night.js";
 import { getState } from "../core/storage.js";
 import { announce, commit } from "./nav.js";
@@ -113,6 +115,7 @@ export function tick(now = Date.now()) {
   const state = getState();
   let changed = false;
   // economy turns: situations progress, money moves, new situations strike
+  const seen = new Set(Object.values(state.nations).flatMap((n) => (n.situations || []).map((x) => x.id)));
   for (const nation of Object.values(state.nations)) {
     const e = ensureEconomy(nation);
     if (!e.enabled || !nation.regions.length) continue;
@@ -124,6 +127,9 @@ export function tick(now = Date.now()) {
       changed = true;
     }
   }
+  // rulers get a pop-up for anything new that needs their decision
+  for (const nation of Object.values(state.nations)) for (const sit of nation.situations || []) if (!seen.has(sit.id) && sit.status === "active" && sit.choice === null) pingSituation(nation, sit);
+  expireProposals(state, now);
   const live = [];
   for (const nation of Object.values(state.nations)) {
     const e = nation.election;

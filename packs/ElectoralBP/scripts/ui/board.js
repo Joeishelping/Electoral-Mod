@@ -15,6 +15,11 @@ import { economyPage } from "./economy.js";
 import { activeCount, disputesMenu, openDisputes, situationsMenu } from "./situations.js";
 import { nightInProgress, startTheme, stopTheme } from "./ticker.js";
 import { world } from "@minecraft/server";
+import { myNations, offersMenu, proposeTreaty } from "./treaties.js";
+import { pingsOn, setPings } from "./pings.js";
+import { openFor } from "../engine/treaties.js";
+import { createRng } from "../core/random.js";
+import { PAPER_EVERY, paperName, writePaper } from "../engine/newspaper.js";
 
 const HELP = [
   "§lHow the Board Table works§r",
@@ -42,10 +47,42 @@ const HELP = [
     "",
   "§67. Economy§r - taxes, tariffs and a budget (military, infrastructure, welfare, research, propaganda) drive GDP, the treasury, the performance sliders and how each interest group feels.",
   "",
-  "§68. Situations§r - floods, strikes, resource strikes, invasions... strike your cities. Pick one of three responses (or do nothing) and a priority. Other countries get their own moves: help, exploit, or start a dispute that an admin rules on. Every outcome is graded, and challengers bring bad grades up in debates.",
+  "§68. Situations§r - 200+ of them strike your cities: disasters, diseases, strikes, scandals about your own candidates, lobby ultimatums, wars... Pick a response (or do nothing) and a priority. Choices have consequences that come back a turn or two later, and your ruler's traits draw their own kind of trouble and unlock special choices. Rulers get a pop-up when something happens.",
+  "",
+  "§69. Newspapers & treaties§r - every country's paper prints the news, polls and gossip every few turns. Rulers propose treaties (alliances, trade, peace, handing over counties, payments) that the other country's ruler must accept.",
   "",
   "§7Admins: operators, or /tag <player> add electoral_admin. Each country can also list Rulers who run its economy, situations and borders.",
 ].join("\n");
+
+function newspaperPage(player, nation) {
+  return loop(player, () => {
+    if (!S().nations[nation.id]) return null;
+    const last = nation.paper?.last;
+    return {
+      title: paperName(nation).slice(0, 40),
+      body: last ? last.join("\n") : `§7No edition yet. ${paperName(nation)} prints every ${PAPER_EVERY} economy turns.`,
+      options: [
+        canRun(player, nation) && {
+          text: "Rename the Paper",
+          run: async () => {
+            const r = await modal(player, "Rename", [{ key: "n", type: "text", label: "Newspaper name", value: paperName(nation) }]);
+            if (!r || !r.n.trim()) return;
+            nation.settings = nation.settings || {};
+            nation.settings.paperName = r.n.trim().slice(0, 40);
+            commit();
+          },
+        },
+        isAdmin(player) && nation.regions.length > 0 && {
+          text: "§ePrint an Edition Now",
+          run: () => {
+            writePaper(S(), nation, createRng(Math.floor(Math.random() * 2 ** 31))).forEach(announce);
+            commit();
+          },
+        },
+      ],
+    };
+  });
+}
 
 export function nationView(player, nation) {
   return loop(player, () => {
@@ -66,6 +103,7 @@ export function nationView(player, nation) {
         nation.leaderId && { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },
         { text: `Situations${activeCount(nation) ? ` §c(${activeCount(nation)})` : ""}`, icon: "textures/items/blaze_powder", run: () => situationsMenu(player, nation) },
         { text: "Economy", icon: "textures/items/gold_ingot", run: () => economyPage(player, nation) },
+        { text: paperName(nation).slice(0, 40), icon: "textures/items/book_writable", run: () => newspaperPage(player, nation) },
         nation.regions.length > 0 && { text: "Interest Groups", icon: "textures/items/name_tag", run: () => interestGroupsPage(player, nation) },
         nation.regions.length > 0 && {
           text: "Counties & Voters",
@@ -109,17 +147,21 @@ async function setRelation(player, fixed = null) {
   const fields = [];
   if (!fixed) fields.push({ key: "a", type: "dropdown", label: "Nation", options: nations.map((n) => n.name) });
   fields.push({ key: "b", type: "dropdown", label: fixed ? `${fixed.name}'s relation with` : "and", options: others.map((n) => n.name), value: fixed ? 0 : Math.min(1, others.length - 1) });
-  fields.push({ key: "stance", type: "dropdown", label: "Relation", options: STANCES.map((s) => `${s.color}${s.name}`), value: 3 });
+  // only admins set relations freely; a ruler can turn hostile alone, but better relations need a treaty
+  const allowed = isAdmin(player) ? STANCES : STANCES.filter((s) => ["tense", "rival", "war"].includes(s.id));
+  fields.push({ key: "stance", type: "dropdown", label: isAdmin(player) ? "Relation" : "Relation (friendlier ones need a treaty the other side accepts)", options: allowed.map((s) => `${s.color}${s.name}`), value: isAdmin(player) ? 3 : 0 });
   const r = await modal(player, "Set Relation", fields, "Set");
   if (!r) return;
   const a = fixed || nations[r.a];
   const b = others[r.b];
   if (!a || !b || a.id === b.id) return notice(player, "Diplomacy", "Pick two different nations.");
-  const stance = STANCES[r.stance];
+  const stance = allowed[r.stance];
   setStance(S(), a.id, b.id, stance.id);
   commit();
   announce(`§6[Diplomacy]§r ${a.color}${a.name}§r and ${b.color}${b.name}§r: ${stance.color}${stance.name}`);
 }
+
+const offerCount = (player) => myNations(player).reduce((n, x) => n + openFor(S(), x.id).length, 0);
 
 function diplomacyMenu(player) {
   return loop(player, () => {
@@ -138,6 +180,7 @@ function diplomacyMenu(player) {
           text: `${n.color}${n.name}\n§7${activeCount(n) ? `§c${activeCount(n)} situation(s)` : "§7calm"}`,
           run: () => diplomacyNation(player, n),
         })),
+        myNations(player).length > 0 && { text: `Treaty Offers${offerCount(player) ? ` §c(${offerCount(player)} waiting)` : ""}`, run: () => offersMenu(player) },
         isAdmin(player) && { text: "§eSet a Relation", run: () => setRelation(player) },
       ],
     };
@@ -161,7 +204,8 @@ function diplomacyNation(player, nation) {
       options: [
         { text: `Situations${activeCount(nation) ? ` §c(${activeCount(nation)})` : ""}`, run: () => situationsMenu(player, nation) },
         { text: "Economy", run: () => economyPage(player, nation) },
-        canRun(player, nation) && Object.keys(state.nations).length > 1 && { text: "Change Our Relations", run: () => setRelation(player, nation) },
+        myNations(player).some((n) => n.id !== nation.id) && { text: `§2Propose a Treaty to ${nation.name}`.slice(0, 60), run: () => proposeTreaty(player, nation) },
+        canRun(player, nation) && Object.keys(state.nations).length > 1 && { text: isAdmin(player) ? "§eSet Our Relations" : "Turn Hostile (rivalry, war...)", run: () => setRelation(player, nation) },
       ],
     };
   });
@@ -189,6 +233,7 @@ export function openBoard(player) {
         nations.length > 1 && { text: "Diplomacy", icon: "textures/items/compass_item", run: () => diplomacyMenu(player) },
         admin && openDisputes().length > 0 && { text: `§6Disputes & Rulings (${openDisputes().length})`, run: () => disputesMenu(player) },
         { text: "How It Works", icon: "textures/items/book_normal", run: () => page(player, "How It Works", HELP) },
+        { text: pingsOn(player) ? "Pop-ups When Things Happen: §aON" : "Pop-ups When Things Happen: §cOFF", run: () => setPings(player, !pingsOn(player)) },
         admin && {
           text: "§7Board Data",
           run: () => loop(player, () => ({
