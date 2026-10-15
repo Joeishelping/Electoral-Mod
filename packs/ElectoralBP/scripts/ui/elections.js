@@ -1,5 +1,6 @@
 // Election screens: starting a vote, ballots, polls, the live count and results.
 
+import { campaignMenu } from "./campaign.js";
 import { system } from "@minecraft/server";
 import { BLOC_BY_ID } from "../data/blocs.js";
 import { ISSUE_BY_ID } from "../data/issues.js";
@@ -264,6 +265,7 @@ export function electionControl(player, nation) {
       options: [
         !e && { text: "§2Start an Election", icon: "textures/items/paper", run: () => startElection(player, nation) },
         e && !nation.count && { text: "Run a Poll", icon: "textures/items/compass_item", run: () => pollMenu(player, nation) },
+        e && !nation.count && { text: "Campaign & Debates", icon: "textures/items/book_writable", run: () => campaignMenu(player, nation) },
         e && !nation.count && { text: "§2Close the Polls - Start Election Night", icon: "textures/items/book_written", run: () => closePolls(player, nation) },
         e && !nation.count && {
           text: "Edit Candidates",

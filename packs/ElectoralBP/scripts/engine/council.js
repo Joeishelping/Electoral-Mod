@@ -7,6 +7,7 @@
 //   relaxAfter after N deadlocked ballots the threshold drops to a majority
 //   coup       a strong loser may try to seize power after the vote
 
+import { applyCampaign } from "./election.js";
 import { createRng, clamp } from "../core/random.js";
 import { regionBlocShares } from "../core/state.js";
 import { BLOC_BY_ID } from "../data/blocs.js";
@@ -61,6 +62,7 @@ function buildElectors(ctx) {
 export function computeCouncil(state, nation, election, seed) {
   const rng = createRng(seed);
   const ctx = buildContext(state, nation, election.candidates);
+  applyCampaign(ctx, election);
   const gov = ctx.gov;
   const cfg = gov.council || {};
   const cands = ctx.candidates;

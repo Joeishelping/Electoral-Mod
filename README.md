@@ -24,6 +24,28 @@ Right-click the table to open it. `/scriptevent electoral:open` also works.
 5. **Open voting.** Players vote at any Board Table. Run polls during the campaign: they give win chances and rate each county Safe, Likely, Lean or Toss-up, and they can be wrong. Chat warns everyone 10, 5 and 1 minute before the polls close.
 6. **Election night** starts when the polls close. You set how long it lasts (default 20 minutes).
 
+## Campaign and debates
+
+While an election is open, a country's page (and Run an Election) has **Campaign & Debates**. Everything here moves the real vote; run a poll to see it.
+
+- **Debates:** pick who takes part, up to three topics (any issue, plus Character & Honesty or The Record in Office), and how it goes:
+  - **Play it out:** each round, choose every candidate's move. If a candidate is "Played by" a player who's online (set it in the candidate's basics), that player picks their own move on their own screen; anyone who doesn't answer within a minute gets the AI's choice.
+  - **Let the AI debate:** candidates choose for themselves, based on their traits, the polls and their opponents' weak spots.
+  - **Submit results:** for debates acted out live on the server or in voice chat. Rate each candidate's performance 0 to 10 and pick a winner.
+- **Moves:** make the case, attack their position, attack their character, hammer their record in office, pivot to a better issue, stay above the fray, go for the knockout line, or rebut.
+  - **Character attacks** land hard if there's dirt (Corrupt, Free Spirit, Gaffe-Prone, Wealthy Heir, low honesty) and backfire if there isn't.
+  - **Record attacks** only work on whoever holds office, and use their actual crisis grades.
+  - **Knockout lines** are a big win or an awkward silence.
+  - **How a move lands** depends on charisma, competence and traits (Silver Tongue shines, Gaffe-Prone can stumble mid-sentence) plus luck.
+- **What a debate changes:** a debate swings support overall and with specific interest groups. It makes its topics matter more to voters on election day, and changes the candidates' popularity and honesty. It plays out in chat line by line, ending in a snap poll of who won. Transcripts can be re-read, and the newspaper reports the result. Once real debates have been held, the random "final debate" election-day event no longer happens.
+- **Campaign trail:** each candidate gets 4 actions per election:
+  - **Rally:** boosts support in one county.
+  - **Positive ad or attack ad:** on an issue.
+  - **Court an interest group:** wins it over, but its rivals notice.
+  - **Fundraiser:** refills the war chest.
+
+  Rallies, ads and courting cost money from the candidate's war chest.
+
 ## Election night
 
 Every election rolls its own **election-day surprises**: storms that keep voters home, record lines, last-minute scandals, endorsements, ground games, debate momentum, ballot shortages. These change the real numbers and get reported as news during the night.

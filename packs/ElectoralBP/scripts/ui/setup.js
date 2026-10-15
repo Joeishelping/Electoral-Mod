@@ -36,11 +36,13 @@ async function candidateBasics(player, nation, p, title = "Candidate") {
     { key: "name", type: "text", label: "Name §c(required)", placeholder: "Type the candidate's name", value: p.name },
     { key: "party", type: "dropdown", label: "Party", options: ["Independent", ...nation.parties.map((x) => x.name || "(unnamed party)")], value: Math.max(0, nation.parties.findIndex((x) => x.id === p.partyId) + 1) },
     { key: "home", type: "dropdown", label: "Home county (they do better there)", options: ["None", ...nation.regions.map((x) => x.name)], value: Math.max(0, nation.regions.findIndex((x) => x.id === p.homeRegion) + 1) },
+    { key: "player", type: "text", label: "Played by (a player's Minecraft name - they choose this candidate's debate moves)", placeholder: "optional", value: p.player || "" },
   ]);
   if (!r) return false;
   if (r.name.trim()) p.name = r.name.trim(); // a blank box keeps the old name
   p.partyId = r.party === 0 ? null : nation.parties[r.party - 1].id;
   p.homeRegion = r.home === 0 ? null : nation.regions[r.home - 1].id;
+  p.player = (r.player || "").trim().slice(0, 32) || null;
   commit();
   if (!p.name) {
     await notice(player, "Name needed", "Every candidate needs a name. Unnamed candidates can't be put on a ballot.");

@@ -324,3 +324,44 @@ test("treaties need both sides: alliances, counties, tribute and peace", async (
   T.expireProposals(s);
   assert.equal(old.status, "expired");
 });
+
+test("debates: moves land or backfire, the winner gains, and the vote moves", async () => {
+  const D = await import("../packs/ElectoralBP/scripts/engine/debates.js");
+  const { s, baza, cands } = twoNations(21);
+  const [a, b] = cands;
+  baza.leaderId = b.id;
+  b.traits = ["corrupt"];
+  a.traits = ["silver"];
+  a.charisma = 90;
+  b.charisma = 30;
+  const election = openElection(s, baza, effectiveGov(baza), { candidates: cands.map((c) => c.id) });
+  const before = computeElection(s, baza, election, 99, { noDayEvents: true });
+  const share = (r, c) => r.national[r.candidates.findIndex((x) => x.id === c.id)] / r.national.reduce((x, y) => x + y, 0);
+  // players choose: A goes after B's character (B is corrupt) and lands a knockout
+  const picks = { character: { [a.id]: { move: "character", target: b.id }, [b.id]: { move: "presidential" } }, economy: { [a.id]: { move: "knockout", target: b.id }, [b.id]: { move: "case" } } };
+  let debate = null;
+  for (let seed = 1; seed < 40 && (!debate || debate.winner !== a.id); seed++) {
+    delete election.campaign;
+    debate = D.runDebate(s, baza, election, { title: "Debate #1", cands: [a.id, b.id], topics: ["character", "economy"], mode: "play" }, (p, topic) => picks[topic][p.id], createRng(seed));
+  }
+  assert.equal(debate.winner, a.id, "the silver-tongued challenger wins against a corrupt incumbent");
+  assert.ok(debate.script.some((l) => l.includes("the bribes")), "the attack names the weakness");
+  assert.ok(debate.script.some((l) => l.includes("Snap poll")));
+  const after = computeElection(s, baza, election, 99, { noDayEvents: true });
+  assert.ok(share(after, a) > share(before, a), "the debate moved the vote toward the winner");
+  // the AI can debate on its own
+  const auto = D.runDebate(s, baza, election, { title: "Debate #2", cands: cands.map((c) => c.id), topics: ["record", "welfare", "character"], mode: "auto" }, () => null, createRng(3));
+  assert.equal(auto.rounds.length, 3);
+  for (const l of auto.script) assert.doesNotMatch(l, /undefined|NaN/);
+  // submitted after a debate acted out live
+  const sub = D.submitDebate(s, baza, election, { title: "Town Hall", cands: [a.id, b.id], topics: ["guns"] }, { [a.id]: 2, [b.id]: 9 }, b.id, createRng(4));
+  assert.equal(sub.winner, b.id);
+  assert.equal(D.ensureCampaign(election).debates.length, 3);
+  // campaign trail: limited actions, costs money
+  const funds = a.funds;
+  assert.ok(D.trailAction(s, baza, election, a, "rally", { regionId: baza.regions[0].id }, createRng(5)));
+  assert.equal(a.funds, funds - 10);
+  for (let i = 0; i < 3; i++) D.trailAction(s, baza, election, a, "fundraiser", {}, createRng(6));
+  assert.equal(D.trailLeft(election, a.id), 0);
+  assert.equal(D.trailAction(s, baza, election, a, "fundraiser", {}, createRng(7)), null, "no actions left");
+});

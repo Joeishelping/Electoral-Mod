@@ -15,6 +15,7 @@ import { economyPage } from "./economy.js";
 import { activeCount, disputesMenu, openDisputes, situationsMenu } from "./situations.js";
 import { nightInProgress, startTheme, stopTheme } from "./ticker.js";
 import { world } from "@minecraft/server";
+import { campaignMenu } from "./campaign.js";
 import { myNations, offersMenu, proposeTreaty } from "./treaties.js";
 import { pingsOn, setPings } from "./pings.js";
 import { openFor } from "../engine/treaties.js";
@@ -98,6 +99,7 @@ export function nationView(player, nation) {
         nation.count && { text: "§b§lLIVE RESULTS", icon: "textures/items/compass_item", run: () => liveResults(player, nation) },
         e && !nation.count && e.kind === "popular" && { text: "§2Vote", icon: "textures/items/paper", run: () => castBallot(player, nation) },
         e && !nation.count && { text: "Latest Poll", icon: "textures/items/compass_item", run: () => pollMenu(player, nation) },
+        e && !nation.count && { text: `Campaign & Debates${e.campaign?.debates?.length ? ` §7(${e.campaign.debates.length})` : ""}`, icon: "textures/items/book_writable", run: () => campaignMenu(player, nation) },
         nation.history[0] && { text: "Last Results", icon: "textures/items/book_written", run: () => viewResult(player, nation, nation.history[0]) },
         nation.history.length > 1 && { text: "Past Elections", run: () => historyMenu(player, nation) },
         nation.leaderId && { text: "Public Mood", icon: "textures/items/emerald", run: () => moodMenu(player, nation) },

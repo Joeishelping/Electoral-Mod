@@ -105,12 +105,30 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
   const counter = built.flatMap((n) => n.situations).find((c) => c.kind === "counter" && c.originSitId === dep?.sit.id);
   if (counter) respondCounter(state, state.nations[counter.nationId], counter, 1, srng); // seize -> dispute
   built[1].rulers = ["Tester"];
+  {
+    // an election in progress, so the campaign screens get explored
+    const { openElection } = await import("../packs/ElectoralBP/scripts/engine/election.js");
+    const { effectiveGov } = await import("../packs/ElectoralBP/scripts/data/governments.js");
+    for (const n of built.slice(0, 3)) {
+      const ids = Object.values(state.persons).filter((p) => p.nationId === n.id).map((p) => p.id);
+      if (!n.election && ids.length > 1) openElection(state, n, effectiveGov(n), { candidates: ids });
+    }
+  }
   saveState();
   let forms = 0;
   const titles = new Set();
   for (let session = 0; session < 900; session++) {
     const rng = createRng(1000 + session);
     if (Object.keys(getState().nations).length < 3) for (const g of GOVERNMENTS.slice(0, 4)) buildNation(getState(), g.id, session + 1, g.name);
+    if (session % 25 === 0) {
+      // keep some elections open so the campaign and debate screens get explored
+      const { openElection } = await import("../packs/ElectoralBP/scripts/engine/election.js");
+      const { effectiveGov } = await import("../packs/ElectoralBP/scripts/data/governments.js");
+      for (const n of Object.values(getState().nations)) {
+        const ids = Object.values(getState().persons).filter((p) => p.nationId === n.id && p.name).map((p) => p.id);
+        if (!n.election && !n.count && ids.length > 1) openElection(getState(), n, effectiveGov(n), { candidates: ids });
+      }
+    }
     if (session % 50 === 0 && !(getState().disputes || []).some((d) => d.status === "open")) {
       // keep a dispute waiting so the admin's Ruling screen stays reachable
       const ns = Object.values(getState().nations).filter((x) => x.regions.length);
@@ -131,13 +149,14 @@ test("random walks through every menu never crash", { timeout: 600000 }, async (
     for (const t of player.seen) titles.add(String(t).replace(/§./g, ""));
     JSON.parse(JSON.stringify(getState()));
   }
+  if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
   for (const m of _messages) assert.doesNotMatch(String(m), BAD, `chat: ${m}`);
   saveState();
   assert.ok(forms > 2000, `explored ${forms} forms`);
   assert.ok(JSON.parse(_props.get("electoral:state:meta")).count >= 1);
   const chat = _messages.join("\n");
   for (const must of ["closed", "first returns", "RESULT"]) assert.ok(chat.includes(must), `live count reached: ${must}`);
-  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government", "Economy", "Taxes & Tariffs", "Budget Allocation", "Response", "Our Move", "Ruling", "Trigger a Situation", "Crisis Record", "Treaty Offers", "On Behalf Of"]) assert.ok(titles.has(must), `reached screen: ${must}`);
+  for (const must of ["Start an Election", "New Candidate", "Add County", "Latest Poll", "By County", "Live Results", "Issues of the Term", "Interest Groups", "Group Support", "Choose a Government", "Economy", "Taxes & Tariffs", "Budget Allocation", "Response", "Our Move", "Ruling", "Trigger a Situation", "Crisis Record", "Treaty Offers", "On Behalf Of", "Campaign", "Hold a Debate", "Campaign Trail", "Debate Results"]) assert.ok(titles.has(must), `reached screen: ${must}`);
   if (process.env.FUZZ_VERBOSE) console.log([...titles].sort().join(" | "));
 });
 
@@ -213,4 +232,37 @@ test("rulers get a pop-up for new situations and treaty offers, and can turn the
   pingSituation(n, spawnSituation(state, n, createRng(9), { tplId: "inflation" }).sit);
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(titles.length, before, "no more pop-ups");
+});
+
+test("a candidate's own player chooses their debate moves", async () => {
+  const { campaignMenu } = await import("../packs/ElectoralBP/scripts/ui/campaign.js");
+  const { openElection } = await import("../packs/ElectoralBP/scripts/engine/election.js");
+  const { effectiveGov } = await import("../packs/ElectoralBP/scripts/data/governments.js");
+  const state = getState();
+  const { n, cands } = buildNation(state, "democracy", 401, "Debatia");
+  openElection(state, n, effectiveGov(n), { candidates: cands.map((c) => c.id) });
+  cands[0].player = "Alice";
+  const host = makePlayer(createRng(1), 1000, true);
+  host.id = "host";
+  const alice = makePlayer(createRng(2), 1000, false);
+  alice.id = "alice";
+  alice.name = "Alice";
+  const asked = [];
+  alice.respond = async (form) => {
+    asked.push(form._title);
+    return form.fields.map((f) => (f.type === "dropdown" && f.label.includes("What does") ? f.items.indexOf("Go for the knockout line") : 0));
+  };
+  let step = 0;
+  host.respond = async (form) => {
+    if (form._title === "Campaign") return step++ === 0 ? form.buttons.findIndex((b) => b.includes("Hold a Debate")) : null;
+    if (form._title === "Hold a Debate") return form.fields.map((f) => (f.key === undefined && f.type === "dropdown" && f.label.includes("How does it go") ? 0 : f.value));
+    return form.fields ? form.fields.map((f) => (f.type === "dropdown" ? 0 : f.value)) : 0;
+  };
+  _players.length = 0;
+  _players.push(host, alice);
+  await campaignMenu(host, n);
+  assert.ok(asked.length >= 1, "Alice was asked for her candidate's moves");
+  const d = n.election.campaign.debates[0];
+  assert.ok(d, "the debate happened");
+  assert.ok(d.rounds.some((r) => r.moves.some((m) => m.who === cands[0].id && m.move === "knockout")), "Alice's choice was used");
 });

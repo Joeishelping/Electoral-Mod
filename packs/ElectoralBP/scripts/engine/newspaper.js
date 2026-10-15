@@ -85,6 +85,12 @@ export function writePaper(state, nation, rng) {
   }
   paper.gdp = gdpNow;
 
+  // the campaign
+  const camp = nation.election?.campaign;
+  const lastDebate = camp?.debates?.[camp.debates.length - 1];
+  if (lastDebate && !nation.count) lines.push(`§7Debate: §f${state.persons[lastDebate.winner]?.name || "nobody"}§7 won "${lastDebate.title}" (${Math.round((lastDebate.snap[lastDebate.winner] || 0) * 100)}% in our snap poll)`);
+  if (camp?.log?.length) lines.push(`§7On the trail: ${camp.log[0]}`);
+
   // the world
   const wars = Object.values(state.nations).filter((o) => o.id !== nation.id && getStance(state, nation.id, o.id) === "war");
   if (wars.length) lines.push(`§cAt war with ${wars.map((o) => o.name).join(", ")}`);

@@ -10,6 +10,7 @@ import { createRng, clamp, softmax } from "../core/random.js";
 import { buildContext, buildGroups, utility, turnoutFor, FACTOR_LABELS } from "./model.js";
 import { computeCouncil } from "./council.js";
 import { rollDayEvents } from "../data/events.js";
+import { campaignMods } from "./debates.js";
 
 // ---------- setup ----------
 
@@ -439,6 +440,15 @@ export function candidateSummary(state, nation, ids) {
   });
 }
 
+/** Debates and the campaign trail: swings and what voters care about. */
+export function applyCampaign(ctx, election) {
+  const fx = campaignMods(election);
+  if (!fx) return;
+  ctx.day = ctx.day || { nat: {}, bloc: {}, region: {}, turnoutRegion: {}, turnoutBloc: {} };
+  for (const k of ["nat", "bloc", "region"]) for (const [key, v] of Object.entries(fx[k] || {})) ctx.day[k][key] = (ctx.day[k][key] || 0) + v;
+  for (const [issue, m] of Object.entries(fx.salience || {})) if (ctx.natSal[issue] !== undefined) ctx.natSal[issue] *= m;
+}
+
 function dayMods(events, cands) {
   const day = { nat: {}, bloc: {}, region: {}, turnoutRegion: {}, turnoutBloc: {} };
   for (const e of events) {
@@ -463,8 +473,10 @@ export function computeElection(state, nation, election, seed, opts = {}) {
   const ctx = buildContext(state, nation, election.candidates);
   const gov = ctx.gov;
   const blocNames = Object.fromEntries(Object.values(BLOC_BY_ID).map((b) => [b.id, b.name]));
-  const dayEvents = opts.noDayEvents ? [] : rollDayEvents(rng, nation, ctx.candidates, blocNames);
+  let dayEvents = opts.noDayEvents ? [] : rollDayEvents(rng, nation, ctx.candidates, blocNames);
+  if (election.campaign?.debates?.length) dayEvents = dayEvents.filter((ev) => ev.type !== "debate"); // real debates were held
   ctx.day = dayMods(dayEvents, ctx.candidates);
+  applyCampaign(ctx, election);
   const method = COUNTERS[election.method] ? election.method : gov.method;
   const groups = simulateGroups(ctx, rng);
   const ballots = playerBallots(state, nation, election, ctx, gov);
